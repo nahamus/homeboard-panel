@@ -100,7 +100,7 @@
   <p class="hint">This page edits <code>board.json</code> in the private repo <b id="repoName"></b>. It needs a GitHub token. The token is stored only in this browser and only ever sent to GitHub.</p>
   <ol>
     <li>On GitHub: <b>Settings → Developer settings → Fine-grained tokens → Generate new token</b></li>
-    <li>Resource owner <b>nahamus</b>. Repository access: <b>Only select repositories → homeboard-data</b></li>
+    <li>Resource owner <b>nahamus</b>. Repository access: <b>Only select repositories → homeboard-data</b> (the private data repo, <i>not</i> homeboard-panel)</li>
     <li>Permissions: <b>Contents: Read and write</b>. Nothing else.</li>
   </ol>
   <label for="tokenInput">Token</label>
@@ -474,16 +474,21 @@ async function load() {
   let res;
   try { res = await github("GET"); } catch (e) { setStatus("Could not reach GitHub: " + e.message, "err"); return; }
   if (res.status === 401) return showSignin("That token was rejected (expired or revoked). Paste a new one.");
-  if (res.status === 403 || (res.status === 404 && !res.json.message?.includes("Not Found"))) return showSignin("The token can't access " + CONFIG.repo + ". Check its repository access and permissions.");
+  // GitHub answers 404 (not 403) when a token can't see a private repo. board.json always
+  // exists in the data repo, so treat 404 as "wrong token" rather than starting from an
+  // empty board that a save would then write over the real notes.
+  if (res.status === 403 || res.status === 404) {
+    store.del(TOKEN_KEY);
+    return showSignin(`This token can't see ${CONFIG.repo}. Edit it on GitHub: Repository access → Only select repositories → ${CONFIG.repo.split("/")[1]} (the private data repo, not homeboard-panel), Contents: Read and write. Then sign in again.`);
+  }
   let board = {};
   if (res.status === 200) { sha = res.json.sha; board = JSON.parse(fromB64(res.json.content)); }
-  else if (res.status === 404) { sha = null; }   // no board.json yet, or no access (GitHub hides private repos as 404)
   else { setStatus("GitHub error " + res.status, "err"); return; }
   state = cleanBoard(board);
   dirty = false;
   $("signin").hidden = true; $("app").hidden = false; $("save").hidden = false; $("save").disabled = true;
   $("pubRepo").textContent = `github.com/${CONFIG.repo}/${CONFIG.path}`;
-  $("pubWhen").textContent = board.updated ? "Last saved " + new Date(board.updated).toLocaleString() : (res.status === 404 ? "board.json not found yet (or this token can't see the repo). Saving will create it." : "");
+  $("pubWhen").textContent = board.updated ? "Last saved " + new Date(board.updated).toLocaleString() : "";
   $("locName").value = state.location.name; $("locLat").value = state.location.latitude; $("locLon").value = state.location.longitude;
   fitTv(); renderNotes(); renderPages(); renderTv();
   setStatus(board.updated ? "Up to date" : "");
