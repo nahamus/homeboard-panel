@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com https://api.open-meteo.com https://nahamus.github.io; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com https://api.open-meteo.com https://nahamus.github.io; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="robots" content="noindex">
 <title>HomeBoard Control</title>
 <style>
@@ -77,6 +77,12 @@
         background: #0B0F14; color: #F5F7FA; font-family: "Segoe UI", system-ui, sans-serif; }
   .tv .l { position: absolute; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tv .r { position: absolute; }
+  .tv .glass { position: absolute; border-radius: 28px; background: rgba(10,16,28,.59);
+               border: 1.5px solid rgba(255,255,255,.16); border-top-color: rgba(255,255,255,.3);
+               box-shadow: 0 6px 24px rgba(0,0,0,.43); box-sizing: border-box; }
+  .tv .chip { position: absolute; border-radius: 16px; background: rgba(255,255,255,.1);
+              border: 1.5px solid rgba(255,255,255,.13); box-sizing: border-box; }
+  .tv img.icon { position: absolute; object-fit: contain; }
   .tv-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
   #signin { max-width: 560px; margin: 48px auto; }
   #signin ol { padding-left: 20px; color: var(--muted); font-size: 14px; }
@@ -134,8 +140,16 @@
 
   <aside>
     <section>
-      <h2>News banner</h2>
-      <p class="hint">Headlines from your news digest crawl along the bottom of the TV, one section per pass.</p>
+      <h2>Display</h2>
+      <div class="field" style="margin:0 0 6px"><label for="sky">Sky</label>
+        <select id="sky">
+          <option value="auto">Automatic (follow the weather)</option>
+          <option value="night">Night</option><option value="dawn">Dawn</option><option value="day">Day</option>
+          <option value="dusk">Dusk</option><option value="cloudy">Cloudy</option><option value="rain">Rain</option>
+          <option value="snow">Snow</option><option value="storm">Storm</option><option value="fog">Fog</option>
+        </select></div>
+      <p class="hint">Pick a scene to try it out (it shows on the TV too). Set it back to Automatic afterwards.</p>
+      <p class="hint" style="margin:14px 0 6px"><b>News banner</b>: headlines from your news digest crawl along the bottom, one section per pass.</p>
       <div id="banner"></div>
       <div class="field"><label for="speed">Scroll speed</label>
         <select id="speed"><option value="slow">Slow</option><option value="normal">Normal</option><option value="fast">Fast</option></select></div>
@@ -166,7 +180,8 @@ const TOKEN_KEY = "homeboard.token";
 const SECTION_NAMES = { top: "Top Stories", following: "Following" };
 const ALL_SECTIONS = Object.keys(SECTION_NAMES);
 const SPEEDS = { slow: 80, normal: 110, fast: 150 };   // px per second, same as the TV
-let state = { notes: [], settings: { ticker: { sections: [...ALL_SECTIONS], speed: "normal" } }, location: { name: "Home", latitude: "", longitude: "" } };
+const SKIES = ["auto", "night", "dawn", "day", "dusk", "cloudy", "rain", "snow", "storm", "fog"];
+let state = { notes: [], settings: { ticker: { sections: [...ALL_SECTIONS], speed: "normal" }, sky: "auto" }, location: { name: "Home", latitude: "", longitude: "" } };
 let dirty = false;
 let sha = null;   // version of board.json we loaded; GitHub rejects a save if it changed meanwhile
 
@@ -199,7 +214,8 @@ function cleanBoard(b) {
   if (!sections.length) sections = [...ALL_SECTIONS];
   const speed = SPEEDS[tk.speed] ? tk.speed : "normal";
   const loc = b.location || {};
-  return { notes, settings: { ticker: { sections, speed } },
+  const sky = SKIES.includes((b.settings || {}).sky) ? b.settings.sky : "auto";
+  return { notes, settings: { ticker: { sections, speed }, sky },
            location: { name: t(loc.name, 60) || "Home", latitude: t(loc.latitude, 20), longitude: t(loc.longitude, 20) } };
 }
 
@@ -256,11 +272,14 @@ function renderBanner() {
       el("button", { className: "icon", textContent: "↓", disabled: i === order.length - 1 || !on || !enabled.includes(order[i + 1]), onclick: () => move(1) })));
   });
   $("speed").value = state.settings.ticker.speed;
+  $("sky").value = state.settings.sky;
 }
 
 // ---------- TV preview: mirrors the SceneGraph layout (components/*.xml/.brs) ----------
-const C = { text: "#F5F7FA", secondary: "#C3CCD5", muted: "#7F8C99", accent: "#6CB4FF", warm: "#FFC857",
-            divider: "#2A3340", badge: "#1A2230", card: "#131B25", band: "#111923", ink: "#0B0F14" };
+const C = { text: "#F5F7FA", white: "#FFFFFF", secondary: "#C3CCD5", muted: "#7F8C99", accent: "#6CB4FF", heading: "#8CC6FF",
+            warm: "#FFC857", hair: "rgba(255,255,255,.15)", band: "rgba(5,8,13,.7)", ink: "#0B0F14" };
+// Same art the TV uses (tools/make-assets.py). Local preview serves the repo root; Pages serves a copy.
+const ASSETS = location.pathname.includes("/control/") ? "../images/ui/" : "images/ui/";
 const DEG = "\u00b0", DOT = "  \u00b7  ";
 let tv = { data: null };
 
@@ -274,6 +293,17 @@ function R(parent, x, y, w, h, color) {
   const e = el("div", { className: "r" });
   Object.assign(e.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px", background: color });
   parent.append(e); return e;
+}
+function Glass(parent, x, y, w, h, cls = "glass") {
+  const e = el("div", { className: cls });
+  Object.assign(e.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px" });
+  parent.append(e); return e;
+}
+function Icon(parent, name, x, y, size) {
+  if (!name) return;
+  const e = el("img", { className: "icon", src: ASSETS + "wx/" + name + ".png", alt: "" });
+  Object.assign(e.style, { left: x + "px", top: y + "px", width: size + "px", height: size + "px" });
+  parent.append(e);
 }
 function G(parent, x, y) { const g = el("div", { className: "r" }); Object.assign(g.style, { left: x + "px", top: y + "px" }); parent.append(g); return g; }
 
@@ -291,73 +321,87 @@ function notesView() {
 function news() { return tv.data && tv.data.news && !tv.data.news.error ? tv.data.news : null; }
 
 function drawHeader(root) {
-  const now = new Date();
-  L(root, hm(now.getHours(), now.getMinutes()), 96, 36, 900, 136, 116, true, C.text);
-  L(root, now.toLocaleDateString("en-US", { weekday: "long" }), 924, 46, 900, 64, 54, true, C.text, "right");
-  L(root, now.toLocaleDateString("en-US", { month: "long", day: "numeric" }), 924, 112, 900, 52, 42, false, C.secondary, "right");
-  R(root, 96, 190, 1728, 2, C.divider);
+  const now = new Date(), h = now.getHours();
+  const t = `${h % 12 || 12}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const clock = L(root, t, 56, 24, 0, 140, 124, true, C.white);
+  clock.style.width = "auto";
+  L(root, h >= 12 ? "PM" : "AM", 56 + clock.offsetWidth + 14, 74, 120, 70, 44, true, C.secondary);
+  L(root, now.toLocaleDateString("en-US", { weekday: "long" }), 964, 38, 900, 64, 54, true, C.white, "right");
+  L(root, now.toLocaleDateString("en-US", { month: "long", day: "numeric" }), 964, 102, 900, 50, 40, false, C.secondary, "right");
 }
 
-// "Coming up" column: 1084 x 640 at (96, 224)
+// "Coming up": glass card 1176 x 760 at (56, 190); content 1104 x 704 at (92, 218)
 function drawNotes(root) {
-  const W = 1084, listHeight = 640 - 76;
-  const p = G(root, 96, 224);
-  L(p, "Coming up", 0, 0, 700, 56, 44, true, C.accent);
+  Glass(root, 56, 190, 1176, 760);
+  const W = 1104, listHeight = 704 - 58;
+  const p = G(root, 92, 218);
+  L(p, "COMING UP", 0, 0, 700, 40, 28, true, C.heading);
   const { pinned, events, total } = notesView();
-  if (!total) { L(p, "Nothing coming up. Add notes in the HomeBoard panel.", 0, 90, W, 60, 40, false, C.secondary); return; }
-  const list = G(p, 0, 76);
+  if (!total) { L(p, "Nothing coming up. Add notes in the HomeBoard panel.", 0, 70, W, 60, 40, false, C.secondary); return; }
+  const list = G(p, 0, 58);
   const today = new Date(todayKey() + "T00:00:00");
   let y = 0, shown = 0;
+  const divider = (yy) => R(list, 0, yy, W, 1, "rgba(255,255,255,.1)");
   for (const n of pinned) {
-    const h = n.details ? 112 : 76; if (y + h > listHeight) break;
-    R(list, 0, y + 10, 8, n.details ? 92 : 56, C.warm);
-    L(list, n.title, 32, y, W - 32, 64, 48, true, C.text);
-    if (n.details) L(list, n.details, 32, y + 60, W - 32, 44, 34, false, C.secondary);
+    const h = n.details ? 120 : 84; if (y + h > listHeight) break;
+    if (shown) divider(y);
+    const yy = y + 4;
+    R(list, 0, yy + 10, 8, n.details ? 92 : 56, C.warm);
+    L(list, n.title, 32, yy, W - 32, 64, 48, true, C.text);
+    if (n.details) L(list, n.details, 32, yy + 60, W - 32, 44, 34, false, C.secondary);
     y += h; shown++;
   }
   for (const n of events) {
-    if (y + 116 > listHeight) break;
+    if (y + 128 > listHeight) break;
+    if (shown) divider(y);
+    const yy = y + 6;
     const d = new Date(n.date + "T00:00:00");
     const days = Math.round((d - today) / 86400000);
-    R(list, 0, y + 4, 128, 104, C.badge);
-    L(list, d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase(), 0, y + 6, 128, 30, 26, true, days === 0 ? C.warm : C.accent, "center");
-    L(list, String(d.getDate()), 0, y + 30, 128, 52, 50, true, C.text, "center");
-    L(list, d.toLocaleDateString("en-US", { month: "short" }).toUpperCase(), 0, y + 78, 128, 26, 22, false, C.muted, "center");
-    L(list, n.title, 160, y + 4, W - 160, 60, 48, true, C.text);
+    if (days === 0) {
+      const g = Glass(list, -14, yy - 2, W + 28, 120, "chip");
+      Object.assign(g.style, { background: "rgba(255,200,87,.16)", borderColor: "rgba(255,200,87,.22)" });
+    }
+    Glass(list, 0, yy + 4, 128, 104, "chip");
+    L(list, d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase(), 0, yy + 6, 128, 30, 26, true, days === 0 ? C.warm : C.accent, "center");
+    L(list, String(d.getDate()), 0, yy + 30, 128, 52, 50, true, C.text, "center");
+    L(list, d.toLocaleDateString("en-US", { month: "short" }).toUpperCase(), 0, yy + 78, 128, 26, 22, false, C.muted, "center");
+    L(list, n.title, 160, yy + 4, W - 160, 60, 48, true, C.text);
     let when = days === 0 ? "Today" : days === 1 ? "Tomorrow" : `In ${days} days`;
-    if (n.time) { const [h, m] = n.time.split(":").map(Number); when += DOT + hm(h, m); }
+    if (n.time) { const [hh, mm] = n.time.split(":").map(Number); when += DOT + hm(hh, mm); }
     if (n.details) when += DOT + n.details;
-    L(list, when, 160, y + 62, W - 160, 44, 34, false, days === 0 ? C.warm : C.secondary);
-    y += 116; shown++;
+    L(list, when, 160, yy + 62, W - 160, 44, 34, false, days === 0 ? C.warm : C.secondary);
+    y += 128; shown++;
   }
-  if (shown < total) L(p, `+${total - shown} more`, W - 400, 0, 400, 56, 30, false, C.muted, "right");
+  if (shown < total) L(p, `+${total - shown} more`, W - 400, 0, 400, 40, 26, false, C.muted, "right");
 }
 
-// Weather card: 584 x 640 at (1240, 224)
+// Weather card: glass 600 x 760 at (1264, 190)
 function drawWeather(root) {
   const w = tv.data && tv.data.weather;
-  const p = G(root, 1240, 224);
-  R(p, 0, 0, 584, 640, C.card);
-  L(p, state.location.name, 32, 18, 360, 48, 34, true, C.accent);
-  if (!w || w.error) { L(p, "--" + DEG, 32, 70, 270, 150, 140, true, C.text); L(p, (w && w.error) || "Loading...", 32, 228, 520, 44, 30, false, C.secondary); return; }
-  L(p, num(w.temp) + DEG, 32, 70, 270, 150, 140, true, C.text);
-  L(p, w.description, 302, 96, 250, 56, 40, false, C.text);
-  L(p, "H " + num(w.high) + DEG + DOT + "L " + num(w.low) + DEG, 302, 150, 250, 48, 34, false, C.secondary);
+  Glass(root, 1264, 190, 600, 760);
+  const p = G(root, 1264, 190);
+  L(p, state.location.name.toUpperCase(), 36, 28, 380, 40, 28, true, C.heading);
+  if (!w || w.error) { L(p, "--" + DEG, 186, 80, 390, 140, 128, true, C.white); L(p, (w && w.error) || "Loading...", 36, 284, 528, 40, 28, false, C.secondary); return; }
+  Icon(p, w.icon, 24, 76, 150);
+  L(p, num(w.temp) + DEG, 186, 80, 390, 140, 128, true, C.white);
+  L(p, w.description + DOT + "H " + num(w.high) + DEG + "  L " + num(w.low) + DEG, 36, 234, 528, 50, 38, false, C.text);
   L(p, "Feels " + num(w.feelsLike) + DEG + DOT + (w.windDir ? w.windDir + " " : "") + num(w.windMph) + " mph" + DOT + num(w.humidity) + "% humidity",
-    32, 228, 520, 44, 30, false, C.secondary);
-  R(p, 32, 290, 520, 2, C.divider);
+    36, 284, 528, 40, 28, false, C.secondary);
+  R(p, 36, 344, 528, 1, C.hair);
   (w.hours || []).slice(0, 5).forEach((h, i) => {
-    const x = 32 + i * 104;
-    L(p, h.label, x, 304, 104, 34, 26, false, C.muted, "center");
-    L(p, num(h.temp) + DEG, x, 338, 104, 52, 40, true, C.text, "center");
-    L(p, h.precip >= 10 ? h.precip + "%" : "", x, 390, 104, 34, 26, false, C.accent, "center");
+    const x = 36 + Math.floor(i * 105.6);
+    L(p, h.label, x, 358, 106, 32, 24, false, C.muted, "center");
+    Icon(p, h.icon, x + 19, 394, 68);
+    L(p, num(h.temp) + DEG, x, 464, 106, 44, 36, true, C.text, "center");
+    L(p, h.precip >= 10 ? h.precip + "%" : "", x, 506, 106, 28, 22, false, C.accent, "center");
   });
-  R(p, 32, 442, 520, 2, C.divider);
-  (w.days || []).slice(0, 3).forEach((d, i) => {
-    const y = 456 + i * 58;
-    L(p, d.name, 32, y, 90, 58, 34, true, C.text);
-    L(p, num(d.high) + DEG + " / " + num(d.low) + DEG, 122, y, 170, 58, 34, false, C.text);
-    L(p, d.description + (d.precip >= 20 ? DOT + d.precip + "%" : ""), 292, y, 260, 58, 28, false, C.muted);
+  R(p, 36, 542, 528, 1, C.hair);
+  (w.days || []).slice(0, 4).forEach((d, i) => {
+    const y = 554 + i * 50;
+    Icon(p, d.icon, 36, y + 4, 42);
+    L(p, d.name, 94, y, 80, 50, 30, true, C.text);
+    L(p, num(d.high) + DEG + " / " + num(d.low) + DEG, 174, y, 154, 50, 30, false, C.text);
+    L(p, d.description + (d.precip >= 20 ? DOT + d.precip + "%" : ""), 328, y, 236, 50, 24, false, C.muted);
   });
 }
 
@@ -365,6 +409,7 @@ function drawWeather(root) {
 function renderTv() {
   const root = $("tvStatic");
   if (!root) return;
+  renderSky();
   root.replaceChildren();
   drawHeader(root);
   drawNotes(root);
@@ -373,20 +418,26 @@ function renderTv() {
 
 // ---------- News crawl (mirrors components/NewsTicker.brs) ----------
 const crawl = { x: 0, width: 0, section: -1, last: 0, track: null, tag: null };
-const CLIP_W = 1404;
+const CLIP_W = 1528;
 
 function buildTvLayers() {
   const stage = $("tv");
   stage.replaceChildren();
-  R(stage, 0, 904, 1920, 176, C.band);
-  R(stage, 0, 904, 1920, 3, C.accent);
+  const skyLayer = el("div", { id: "tvSky", className: "r" });
+  Object.assign(skyLayer.style, { left: 0, top: 0, width: "1920px", height: "1080px", overflow: "hidden" });
+  stage.append(skyLayer);
+  R(stage, 0, 980, 1920, 100, C.band);
+  R(stage, 0, 980, 1920, 1, "rgba(255,255,255,.2)");
   stage.append(Object.assign(el("div", { id: "tvStatic", className: "r" }), { style: "left:0;top:0;width:1920px;height:1080px" }));
-  R(stage, 96, 930, 300, 70, C.accent);
-  crawl.tag = L(stage, "NEWS", 96, 930, 300, 70, 30, true, C.ink, "center");
+  const pill = R(stage, 56, 1002, 256, 56, C.accent);
+  Object.assign(pill.style, { borderRadius: "28px", boxShadow: "inset 0 0 0 1.5px #8CC6FF" });
+  crawl.tag = L(stage, "NEWS", 56, 1002, 256, 56, 26, true, C.ink, "center");
   const clip = el("div", { className: "r" });
-  Object.assign(clip.style, { left: "420px", top: "904px", width: CLIP_W + "px", height: "122px", overflow: "hidden" });
+  Object.assign(clip.style, { left: "336px", top: "980px", width: CLIP_W + "px", height: "100px", overflow: "hidden",
+    maskImage: "linear-gradient(90deg, transparent 0, #000 72px, #000 calc(100% - 72px), transparent 100%)",
+    webkitMaskImage: "linear-gradient(90deg, transparent 0, #000 72px, #000 calc(100% - 72px), transparent 100%)" });
   crawl.track = el("div", { className: "r" });
-  Object.assign(crawl.track.style, { left: "0", top: "0", height: "122px", display: "flex", alignItems: "center", whiteSpace: "nowrap" });
+  Object.assign(crawl.track.style, { left: "0", top: "0", height: "100px", display: "flex", alignItems: "center", whiteSpace: "nowrap" });
   clip.append(crawl.track); stage.append(clip);
 }
 
@@ -401,7 +452,7 @@ function startPass() {
   crawl.track.replaceChildren();
   if (!keys.length) {
     crawl.tag.textContent = "NEWS";
-    crawl.track.append(span("Loading headlines...", 44, false, C.secondary));
+    crawl.track.append(span("Loading headlines...", 40, false, C.secondary));
     crawl.x = 0; crawl.width = 0; crawl.track.style.transform = "translateX(0)";
     return;
   }
@@ -409,9 +460,9 @@ function startPass() {
   const key = keys[crawl.section];
   crawl.tag.textContent = key === "following" ? "FOLLOWING" : "TOP STORIES";
   for (const it of news()[key]) {
-    crawl.track.append(span(it.title, 44, true, C.text, 28));
-    if (it.source) crawl.track.append(span(it.source, 32, false, C.muted, 0));
-    const dot = el("span"); Object.assign(dot.style, { display: "inline-block", width: "12px", height: "12px", background: C.accent, margin: "0 56px" });
+    crawl.track.append(span(it.title, 40, true, C.text, 28));
+    if (it.source) { const sp = span(it.source, 28, false, C.accent, 0); sp.style.opacity = 0.8; crawl.track.append(sp); }
+    const dot = el("span"); Object.assign(dot.style, { display: "inline-block", width: "8px", height: "8px", background: "rgba(255,255,255,.4)", margin: "0 56px" });
     crawl.track.append(dot);
   }
   crawl.width = crawl.track.scrollWidth;
@@ -433,6 +484,125 @@ function tickCrawl(t) {
   requestAnimationFrame(tickCrawl);
 }
 
+// ---------- Living sky (mirrors components/SkyScene.brs) ----------
+const SKY = { key: "", flashTimer: null };
+const minsOf = (iso) => { const m = /T(\d\d):(\d\d)/.exec(iso || ""); return m ? +m[1] * 60 + +m[2] : -1; };
+function skyTimeOfDay(w) {
+  const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
+  let rise = w ? minsOf(w.sunrise) : -1, set = w ? minsOf(w.sunset) : -1;
+  if (rise < 0) rise = 420; if (set < 0) set = 1080;
+  if (Math.abs(mins - rise) <= 45) return "dawn";
+  if (Math.abs(mins - set) <= 45) return "dusk";
+  return mins > rise && mins < set ? "day" : "night";
+}
+function skyCondition(w) {
+  const c = w && typeof w.code === "number" ? w.code : 0;
+  if (c <= 1) return "clear"; if (c === 2) return "partly"; if (c === 3) return "cloudy";
+  if (c === 45 || c === 48) return "fog"; if (c >= 51 && c <= 57) return "drizzle";
+  if ((c >= 61 && c <= 67) || (c >= 80 && c <= 82)) return "rain";
+  if ((c >= 71 && c <= 77) || c === 85 || c === 86) return "snow";
+  return c >= 95 ? "storm" : "cloudy";
+}
+const FORCED = { night: ["night", "clear"], dawn: ["dawn", "partly"], day: ["day", "partly"], dusk: ["dusk", "clear"],
+  cloudy: ["day", "cloudy"], rain: ["day", "rain"], snow: ["day", "snow"], storm: ["night", "storm"], fog: ["dawn", "fog"] };
+function cloudLook(tod, cond) {
+  if (cond === "storm") return ["#5C6474", 1];
+  if (tod === "night") return cond === "clear" || cond === "partly" ? ["#6E7A96", 0.6] : ["#55607A", 0.9];
+  if (cond === "drizzle" || cond === "rain") return ["#AAB4C2", 0.95];
+  if (cond === "snow") return ["#DCE2EA", 0.85];
+  if (cond === "fog") return ["#DCE2EA", 0.5];
+  if (tod === "dawn") return ["#FFD6C8", 0.8];
+  if (tod === "dusk") return ["#FFC8BE", 0.75];
+  return ["#FFFFFF", 0.9];
+}
+function skyImg(file, x, y, w, h) {
+  const e = el("img", { src: ASSETS + "sky/" + file, alt: "" });
+  Object.assign(e.style, { position: "absolute", left: 0, top: 0, width: w + "px", height: h + "px", transform: `translate(${x}px, ${y}px)` });
+  return e;
+}
+// Roku's blendColor multiplies the cloud's colours; do the same on a canvas.
+function tintedCloud(file, w, h, tint, alpha) {
+  const cv = el("canvas", { width: w, height: h });
+  Object.assign(cv.style, { position: "absolute", left: 0, top: 0, opacity: alpha });
+  const img = new Image();
+  img.onload = () => {
+    const g = cv.getContext("2d");
+    g.drawImage(img, 0, 0, w, h);
+    g.globalCompositeOperation = "multiply"; g.fillStyle = tint; g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = "destination-in"; g.drawImage(img, 0, 0, w, h);
+  };
+  img.src = ASSETS + "sky/" + file;
+  return cv;
+}
+function fallingLayer(file, opacity, seconds) {
+  const e = el("div");
+  Object.assign(e.style, { position: "absolute", left: 0, top: 0, width: "1920px", height: "1080px", opacity,
+    backgroundImage: `url(${ASSETS}sky/${file})`, backgroundSize: "1920px 1080px", backgroundRepeat: "repeat" });
+  e.animate([{ backgroundPosition: "0 0" }, { backgroundPosition: "0 1080px" }], { duration: seconds * 1000, iterations: Infinity, easing: "linear" });
+  return e;
+}
+function renderSky() {
+  const layer = $("tvSky");
+  if (!layer) return;
+  const w = tv.data && tv.data.weather && !tv.data.weather.error ? tv.data.weather : null;
+  let tod = skyTimeOfDay(w), cond = skyCondition(w);
+  const f = state.settings.sky;
+  if (FORCED[f]) [tod, cond] = FORCED[f];
+  const key = tod + "/" + cond;
+  if (key === SKY.key) return;
+  SKY.key = key;
+  clearTimeout(SKY.flashTimer);
+  layer.replaceChildren();
+  const clearish = cond === "clear" || cond === "partly";
+  const base = cond === "storm" ? "storm" : clearish ? tod : tod === "night" ? "overcast-night" : "overcast-day";
+  layer.append(skyImg(base + ".jpg", 0, 0, 1920, 1080));
+  if (clearish) {
+    const g = tod === "night" ? ["moon-glow", 600, 1380, -200] : tod === "dawn" ? ["sun-glow", 900, -250, 520]
+      : tod === "dusk" ? ["sun-glow", 900, 1250, 540] : ["sun-glow", 900, 1200, -380];
+    layer.append(skyImg(g[0] + ".png", g[2], g[3], g[1], g[1]));
+  }
+  if (tod === "night" && clearish) {
+    const groups = [[4, [0.3, 1, 0.3]], [5.5, [1, 0.35, 1]], [7, [0.5, 1, 0.5]]].map(([secs, vals]) => {
+      const gr = el("div"); Object.assign(gr.style, { position: "absolute", left: 0, top: 0 });
+      gr.animate(vals.map((o) => ({ opacity: o })), { duration: secs * 1000, iterations: Infinity, easing: "ease-in-out" });
+      layer.append(gr); return gr;
+    });
+    let seed = 42; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 72; i++) { const sz = 6 + Math.floor(rnd() * 12); groups[i % 3].append(skyImg("star.png", Math.floor(rnd() * 1900), Math.floor(rnd() * 640), sz, sz)); }
+  }
+  const count = cond === "partly" ? 2 : cond === "fog" ? 1 : ["cloudy", "drizzle", "rain", "snow", "storm"].includes(cond) ? 3 : 0;
+  const [tint, alpha] = cloudLook(tod, cond);
+  [[1400, 560, 30, 200, 420], [1120, 448, 230, 1150, 300], [1400, 560, 110, -700, 540]].slice(0, count).forEach(([cw, ch, y, x0, secs], i) => {
+    const c = tintedCloud(`cloud${i + 1}.png`, cw, ch, tint, alpha);
+    const a = Math.min(0.999, Math.max(0.001, (1920 - x0) / (1920 + cw)));
+    c.animate([{ transform: `translate(${x0}px, ${y}px)` }, { transform: `translate(1920px, ${y}px)`, offset: a },
+               { transform: `translate(${-cw}px, ${y}px)`, offset: a + 0.0001 }, { transform: `translate(${x0}px, ${y}px)` }],
+              { duration: secs * 1000, iterations: Infinity, easing: "linear" });
+    layer.append(c);
+  });
+  if (cond === "fog") {
+    const fg = el("div"); Object.assign(fg.style, { position: "absolute", left: 0, top: 0 });
+    fg.append(skyImg("fog.png", 0, 540, 1920, 360), skyImg("fog.png", 160, 760, 1920, 360));
+    fg.animate([{ transform: "translateX(-160px)" }, { transform: "translateX(0)" }, { transform: "translateX(-160px)" }],
+               { duration: 70000, iterations: Infinity, easing: "ease-in-out" });
+    layer.append(fg);
+  }
+  if (cond === "drizzle") layer.append(fallingLayer("rain.png", 0.35, 1.1));
+  if (cond === "rain") layer.append(fallingLayer("rain.png", 0.6, 0.75));
+  if (cond === "storm") layer.append(fallingLayer("rain.png", 0.8, 0.6));
+  if (cond === "snow") layer.append(fallingLayer("snow-far.png", 1, 40), fallingLayer("snow-near.png", 1, 22));
+  if (cond === "storm") {
+    const flash = el("div"); Object.assign(flash.style, { position: "absolute", left: 0, top: 0, width: "1920px", height: "1080px", background: "#DDE6FF", opacity: 0 });
+    layer.append(flash);
+    const strike = () => {
+      flash.animate([{ opacity: 0, offset: 0 }, { opacity: 0.5, offset: 0.04 }, { opacity: 0.05, offset: 0.12 }, { opacity: 0.3, offset: 0.2 }, { opacity: 0, offset: 0.32 }, { opacity: 0 }],
+                    { duration: 1200, easing: "linear" });
+      SKY.flashTimer = setTimeout(strike, 12000 + Math.random() * 24000);
+    };
+    SKY.flashTimer = setTimeout(strike, 2500);
+  }
+}
+
 function fitTv() { const vp = $("tvViewport"); $("tv").style.transform = `scale(${vp.clientWidth / 1920})`; }
 const WMO = { 0: ["Sunny", "Clear"], 1: ["Mostly Sunny", "Mostly Clear"], 2: "Partly Cloudy", 3: "Cloudy", 45: "Fog", 48: "Fog",
   51: "Drizzle", 53: "Drizzle", 55: "Drizzle", 56: "Freezing Drizzle", 57: "Freezing Drizzle", 61: "Light Rain", 63: "Rain",
@@ -440,6 +610,17 @@ const WMO = { 0: ["Sunny", "Clear"], 1: ["Mostly Sunny", "Mostly Clear"], 2: "Pa
   80: "Rain Showers", 81: "Rain Showers", 82: "Heavy Showers", 85: "Snow Showers", 86: "Snow Showers", 95: "Thunderstorms",
   96: "Storms with Hail", 99: "Storms with Hail" };
 const rnd = (v) => (v === null || v === undefined ? null : Math.round(v));
+// WMO code -> icon name (same as weatherIcon() in components/tasks/FetchTask.brs)
+function weatherIcon(code, isDay) {
+  if (code === 0) return isDay ? "clear-day" : "clear-night";
+  if (code === 1 || code === 2) return isDay ? "partly-day" : "partly-night";
+  if (code === 45 || code === 48) return "fog";
+  if (code >= 51 && code <= 57) return "drizzle";
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return "rain";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "snow";
+  if (code >= 95) return "storm";
+  return "cloudy";
+}
 
 async function fetchWeather() {
   const { latitude: lat, longitude: lon } = state.location;
@@ -447,8 +628,8 @@ async function fetchWeather() {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}` +
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day" +
     "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code" +
-    "&hourly=temperature_2m,precipitation_probability" +
-    "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=4";
+    "&hourly=temperature_2m,precipitation_probability,weather_code,is_day" +
+    "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=5";
   const j = await fetch(url).then((r) => r.json());
   const c = j.current, d = j.daily, first = (k) => (d[k] || [null])[0];
   const desc = WMO[c.weather_code] ?? "--";
@@ -457,17 +638,19 @@ async function fetchWeather() {
   const start = j.hourly.time.findIndex((t) => t > c.time);
   const hours = [];
   for (let i = start; start >= 0 && i < j.hourly.time.length && hours.length < 5; i += 2)
-    hours.push({ label: hourLabel(j.hourly.time[i]), temp: rnd(j.hourly.temperature_2m[i]), precip: rnd(j.hourly.precipitation_probability[i]) });
-  const days = [1, 2, 3].filter((i) => d.time[i]).map((i) => ({
+    hours.push({ label: hourLabel(j.hourly.time[i]), temp: rnd(j.hourly.temperature_2m[i]), precip: rnd(j.hourly.precipitation_probability[i]),
+                 icon: weatherIcon(j.hourly.weather_code[i], j.hourly.is_day[i] !== 0) });
+  const days = [1, 2, 3, 4].filter((i) => d.time[i]).map((i) => ({
     name: new Date(d.time[i] + "T12:00:00").toLocaleDateString("en-US", { weekday: "short" }),
     high: rnd(d.temperature_2m_max[i]), low: rnd(d.temperature_2m_min[i]),
-    precip: rnd(d.precipitation_probability_max[i]), description: dayDesc(d.weather_code[i]) }));
+    precip: rnd(d.precipitation_probability_max[i]), description: dayDesc(d.weather_code[i]), icon: weatherIcon(d.weather_code[i], true) }));
   return { temp: rnd(c.temperature_2m), feelsLike: rnd(c.apparent_temperature), humidity: rnd(c.relative_humidity_2m),
     windMph: rnd(c.wind_speed_10m),
     windDir: c.wind_direction_10m == null ? null : ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.floor((c.wind_direction_10m + 22.5) / 45) % 8],
     description: Array.isArray(desc) ? desc[c.is_day === 1 ? 0 : 1] : desc,
     high: rnd(first("temperature_2m_max")), low: rnd(first("temperature_2m_min")),
-    precipChance: rnd(first("precipitation_probability_max")), sunrise: first("sunrise"), sunset: first("sunset"), hours, days };
+    precipChance: rnd(first("precipitation_probability_max")), sunrise: first("sunrise"), sunset: first("sunset"), hours, days,
+    icon: weatherIcon(c.weather_code, c.is_day === 1), isDay: c.is_day === 1, code: c.weather_code };
 }
 
 async function fetchNews() {
@@ -553,6 +736,7 @@ $("addNote").onclick = () => addNote(false);
 $("addEvent").onclick = () => addNote(true);
 $("clearPast").onclick = () => { const t = todayKey(); const before = state.notes.length; state.notes = state.notes.filter((n) => !n.date || n.date >= t); if (state.notes.length !== before) { renderNotes(); markDirty(); } };
 $("speed").addEventListener("change", () => { state.settings.ticker.speed = $("speed").value; markDirty(); });
+$("sky").addEventListener("change", () => { state.settings.sky = $("sky").value; markDirty(); renderSky(); });
 $("tvRefresh").onclick = () => loadTvData();
 for (const [id, key] of [["locName", "name"], ["locLat", "latitude"], ["locLon", "longitude"]]) {
   $(id).addEventListener("input", () => { state.location[key] = $(id).value; markDirty(); });
