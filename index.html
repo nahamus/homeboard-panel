@@ -40,7 +40,8 @@
   input[type=text], input[type=date], input[type=time], input[type=number] {
     font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line);
     border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; }
-  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  select { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
   .note { display: grid; grid-template-columns: 22px minmax(0, 2fr) 160px 130px minmax(0, 1.5fr) auto;
           gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
   .note.head { border-top: 0; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding-top: 0; }
@@ -112,13 +113,11 @@
 <main id="app" hidden>
   <section class="tv-section">
     <div class="tv-bar">
-      <h2 style="margin:0 8px 0 0">TV preview</h2>
-      <div class="tabs" id="tvTabs"></div>
-      <label><input type="checkbox" id="tvRotate" checked> Rotate like the TV</label>
+      <h2 style="margin:0 8px 0 0; flex:1">TV preview</h2>
       <button id="tvRefresh" title="Re-fetch weather and news">Refresh data</button>
     </div>
     <div class="tv-frame"><div class="tv-viewport" id="tvViewport"><div class="tv" id="tv"></div></div></div>
-    <p class="tv-note" id="tvNote">A true-to-scale 1920×1080 replica of the screensaver, using your unsaved edits, live weather and news. The TV uses Roku's own font, so line breaks can differ slightly.</p>
+    <p class="tv-note" id="tvNote">A true-to-scale 1920×1080 replica of the screensaver, using your unsaved edits, live weather and your news digest. The TV uses Roku's own font, so text widths can differ slightly.</p>
   </section>
 
   <section>
@@ -135,10 +134,11 @@
 
   <aside>
     <section>
-      <h2>Pages</h2>
-      <p class="hint">Which pages rotate on the TV, in order. Pages with nothing to show are skipped.</p>
-      <div id="pages"></div>
-      <div class="field"><label for="seconds">Seconds per page</label><input id="seconds" type="number" min="5" max="600"></div>
+      <h2>News banner</h2>
+      <p class="hint">Headlines from your news digest crawl along the bottom of the TV, one section per pass.</p>
+      <div id="banner"></div>
+      <div class="field"><label for="speed">Scroll speed</label>
+        <select id="speed"><option value="slow">Slow</option><option value="normal">Normal</option><option value="fast">Fast</option></select></div>
     </section>
 
     <section>
@@ -160,12 +160,13 @@
 <script>
 const CONFIG = {
   repo: "nahamus/homeboard-data", path: "board.json",
-  digestUrl: "https://nahamus.github.io/news-digest/latest.json", digestName: "News Digest", maxStories: 5,
+  digestUrl: "https://nahamus.github.io/news-digest/latest.json", digestName: "News Digest", maxStories: 8,
 };
 const TOKEN_KEY = "homeboard.token";
-const PAGE_NAMES = { notes: "Notes & Events", top: "Top Stories", following: "Following", weather: "Weather" };
-const ALL_PAGES = Object.keys(PAGE_NAMES);
-let state = { notes: [], settings: { pages: [...ALL_PAGES], secondsPerPage: 25 }, location: { name: "Home", latitude: "", longitude: "" } };
+const SECTION_NAMES = { top: "Top Stories", following: "Following" };
+const ALL_SECTIONS = Object.keys(SECTION_NAMES);
+const SPEEDS = { slow: 80, normal: 110, fast: 150 };   // px per second, same as the TV
+let state = { notes: [], settings: { ticker: { sections: [...ALL_SECTIONS], speed: "normal" } }, location: { name: "Home", latitude: "", longitude: "" } };
 let dirty = false;
 let sha = null;   // version of board.json we loaded; GitHub rejects a save if it changed meanwhile
 
@@ -193,12 +194,12 @@ function cleanBoard(b) {
   const t = (v, n) => String(v ?? "").trim().slice(0, n);
   const notes = (b.notes || []).filter((n) => n && t(n.title, 200)).map((n) => ({
     show: n.show !== false, title: t(n.title, 200), date: t(n.date, 10), time: t(n.time, 8), details: t(n.details, 200) }));
-  const s = b.settings || {};
-  let pages = [...new Set((s.pages || []).filter((p) => ALL_PAGES.includes(p)))];
-  if (!pages.length) pages = [...ALL_PAGES];
-  const seconds = Math.max(5, Math.min(600, parseInt(s.secondsPerPage, 10) || 25));
+  const tk = (b.settings || {}).ticker || {};
+  let sections = [...new Set((tk.sections || []).filter((k) => ALL_SECTIONS.includes(k)))];
+  if (!sections.length) sections = [...ALL_SECTIONS];
+  const speed = SPEEDS[tk.speed] ? tk.speed : "normal";
   const loc = b.location || {};
-  return { notes, settings: { pages, secondsPerPage: seconds },
+  return { notes, settings: { ticker: { sections, speed } },
            location: { name: t(loc.name, 60) || "Home", latitude: t(loc.latitude, 20), longitude: t(loc.longitude, 20) } };
 }
 
@@ -236,32 +237,32 @@ function addNote(withDate) {
   const inputs = $("notes").querySelectorAll("input.title"); inputs[inputs.length - 1].focus();
 }
 
-function renderPages() {
-  const box = $("pages"); box.replaceChildren();
-  const enabled = state.settings.pages;
-  const order = [...enabled, ...ALL_PAGES.filter((p) => !enabled.includes(p))];
+function renderBanner() {
+  const box = $("banner"); box.replaceChildren();
+  const enabled = state.settings.ticker.sections;
+  const order = [...enabled, ...ALL_SECTIONS.filter((k) => !enabled.includes(k))];
   order.forEach((key, i) => {
     const on = enabled.includes(key);
     const cb = el("input", { type: "checkbox", checked: on });
     cb.addEventListener("change", () => {
-      const rest = order.filter((k) => k === key ? cb.checked : enabled.includes(k));
-      if (!rest.length) { cb.checked = true; return; }
-      state.settings.pages = rest; renderPages(); markDirty();
+      const next = order.filter((k) => (k === key ? cb.checked : enabled.includes(k)));
+      if (!next.length) { cb.checked = true; return; }
+      state.settings.ticker.sections = next; renderBanner(); markDirty();
     });
-    const move = (d) => { const o = [...order]; [o[i], o[i + d]] = [o[i + d], o[i]]; state.settings.pages = o.filter((k) => enabled.includes(k)); renderPages(); markDirty(); };
+    const move = (d) => { const o = [...order]; [o[i], o[i + d]] = [o[i + d], o[i]]; state.settings.ticker.sections = o.filter((k) => enabled.includes(k)); renderBanner(); markDirty(); };
     box.append(el("div", { className: "page" },
-      el("label", {}, cb, PAGE_NAMES[key]),
+      el("label", {}, cb, SECTION_NAMES[key]),
       el("button", { className: "icon", textContent: "↑", disabled: i === 0 || !on, onclick: () => move(-1) }),
       el("button", { className: "icon", textContent: "↓", disabled: i === order.length - 1 || !on || !enabled.includes(order[i + 1]), onclick: () => move(1) })));
   });
-  $("seconds").value = state.settings.secondsPerPage;
+  $("speed").value = state.settings.ticker.speed;
 }
 
 // ---------- TV preview: mirrors the SceneGraph layout (components/*.xml/.brs) ----------
 const C = { text: "#F5F7FA", secondary: "#C3CCD5", muted: "#7F8C99", accent: "#6CB4FF", warm: "#FFC857",
-            divider: "#2A3340", badge: "#1A2230", dotOff: "#3A4554" };
-const DEG = "°", DOT = "  ·  ";
-let tv = { data: null, key: "", timer: null, wanted: location.hash.slice(1) };
+            divider: "#2A3340", badge: "#1A2230", card: "#131B25", band: "#111923", ink: "#0B0F14" };
+const DEG = "\u00b0", DOT = "  \u00b7  ";
+let tv = { data: null };
 
 function L(parent, text, x, y, w, h, size, bold, color, align = "left") {
   const e = el("div", { className: "l", textContent: text ?? "" });
@@ -278,7 +279,6 @@ function G(parent, x, y) { const g = el("div", { className: "r" }); Object.assig
 
 const hm = (h, m) => `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
 const num = (v) => (v === null || v === undefined ? "--" : String(v));
-const isoTime = (s) => { const m = /T(\d\d):(\d\d)/.exec(s || ""); return m ? hm(+m[1], +m[2]) : "--"; };
 
 function notesView() {
   const today = todayKey();
@@ -290,131 +290,150 @@ function notesView() {
 }
 function news() { return tv.data && tv.data.news && !tv.data.news.error ? tv.data.news : null; }
 
-function activeKeys() {
-  const keys = state.settings.pages.filter((k) =>
-    k === "weather" || (k === "notes" && notesView().total > 0) ||
-    ((k === "top" || k === "following") && news() && news()[k].length > 0));
-  return keys.length ? keys : ["weather"];
-}
-
 function drawHeader(root) {
   const now = new Date();
-  const w = tv.data && tv.data.weather;
-  let temp = "--" + DEG + "F", cond = "Loading weather...";
-  if (w && w.error) cond = w.error;
-  else if (w) { temp = num(w.temp) + DEG + "F"; cond = w.description + DOT + "H " + num(w.high) + DEG + " / L " + num(w.low) + DEG; }
-  L(root, temp, 96, 44, 820, 150, 128, true, C.text);
-  L(root, cond, 96, 196, 860, 60, 46, false, C.secondary);
-  L(root, hm(now.getHours(), now.getMinutes()), 924, 44, 900, 150, 128, true, C.text, "right");
-  L(root, now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }), 924, 196, 900, 60, 46, false, C.secondary, "right");
-  R(root, 96, 276, 1728, 2, C.divider);
+  L(root, hm(now.getHours(), now.getMinutes()), 96, 36, 900, 136, 116, true, C.text);
+  L(root, now.toLocaleDateString("en-US", { weekday: "long" }), 924, 46, 900, 64, 54, true, C.text, "right");
+  L(root, now.toLocaleDateString("en-US", { month: "long", day: "numeric" }), 924, 112, 900, 52, 42, false, C.secondary, "right");
+  R(root, 96, 190, 1728, 2, C.divider);
 }
 
-function drawNews(p, title, items, subtitle) {
-  L(p, title, 96, 0, 1100, 64, 54, true, C.accent);
-  L(p, subtitle, 1224, 0, 600, 64, 38, false, C.muted, "right");
-  const list = G(p, 0, 88);
-  const twoLine = items.some((i) => i.meta);
-  let n = items.length, rowH = 68;
-  if (twoLine) { rowH = 108; n = Math.min(n, 5); } else if (n > 8) rowH = Math.floor(548 / n);
-  for (let i = 0; i < n; i++) {
-    const y = i * rowH, it = items[i];
-    if (twoLine) {
-      R(list, 96, y + 10, 8, 84, C.accent);
-      L(list, it.title, 128, y, 1696, 58, 46, true, C.text);
-      L(list, it.meta, 128, y + 56, 1696, 40, 32, false, C.muted);
-    } else {
-      R(list, 96, y + Math.floor(rowH * 0.22), 8, Math.floor(rowH * 0.56), C.accent);
-      L(list, it.title, 128, y, 1696, rowH, Math.floor(rowH * 0.66), false, C.text);
-    }
-  }
-}
-
-function drawNotes(p) {
-  L(p, "Notes & Events", 96, 0, 1100, 64, 54, true, C.accent);
+// "Coming up" column: 1084 x 640 at (96, 224)
+function drawNotes(root) {
+  const W = 1084, listHeight = 640 - 76;
+  const p = G(root, 96, 224);
+  L(p, "Coming up", 0, 0, 700, 56, 44, true, C.accent);
   const { pinned, events, total } = notesView();
-  const list = G(p, 0, 88);
+  if (!total) { L(p, "Nothing coming up. Add notes in the HomeBoard panel.", 0, 90, W, 60, 40, false, C.secondary); return; }
+  const list = G(p, 0, 76);
   const today = new Date(todayKey() + "T00:00:00");
   let y = 0, shown = 0;
   for (const n of pinned) {
-    const h = n.details ? 112 : 76; if (y + h > 548) break;
-    R(list, 96, y + 10, 8, n.details ? 92 : 56, C.warm);
-    L(list, n.title, 128, y, 1696, 64, 48, true, C.text);
-    if (n.details) L(list, n.details, 128, y + 60, 1696, 44, 34, false, C.secondary);
+    const h = n.details ? 112 : 76; if (y + h > listHeight) break;
+    R(list, 0, y + 10, 8, n.details ? 92 : 56, C.warm);
+    L(list, n.title, 32, y, W - 32, 64, 48, true, C.text);
+    if (n.details) L(list, n.details, 32, y + 60, W - 32, 44, 34, false, C.secondary);
     y += h; shown++;
   }
   for (const n of events) {
-    if (y + 116 > 548) break;
+    if (y + 116 > listHeight) break;
     const d = new Date(n.date + "T00:00:00");
     const days = Math.round((d - today) / 86400000);
-    R(list, 96, y + 4, 128, 104, C.badge);
-    L(list, d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase(), 96, y + 6, 128, 30, 26, true, days === 0 ? C.warm : C.accent, "center");
-    L(list, String(d.getDate()), 96, y + 30, 128, 52, 50, true, C.text, "center");
-    L(list, d.toLocaleDateString("en-US", { month: "short" }).toUpperCase(), 96, y + 78, 128, 26, 22, false, C.muted, "center");
-    L(list, n.title, 256, y + 4, 1568, 60, 48, true, C.text);
+    R(list, 0, y + 4, 128, 104, C.badge);
+    L(list, d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase(), 0, y + 6, 128, 30, 26, true, days === 0 ? C.warm : C.accent, "center");
+    L(list, String(d.getDate()), 0, y + 30, 128, 52, 50, true, C.text, "center");
+    L(list, d.toLocaleDateString("en-US", { month: "short" }).toUpperCase(), 0, y + 78, 128, 26, 22, false, C.muted, "center");
+    L(list, n.title, 160, y + 4, W - 160, 60, 48, true, C.text);
     let when = days === 0 ? "Today" : days === 1 ? "Tomorrow" : `In ${days} days`;
     if (n.time) { const [h, m] = n.time.split(":").map(Number); when += DOT + hm(h, m); }
     if (n.details) when += DOT + n.details;
-    L(list, when, 256, y + 62, 1568, 44, 34, false, days === 0 ? C.warm : C.secondary);
+    L(list, when, 160, y + 62, W - 160, 44, 34, false, days === 0 ? C.warm : C.secondary);
     y += 116; shown++;
   }
-  if (shown < total) L(p, `${shown} of ${total} shown`, 1224, 0, 600, 64, 38, false, C.muted, "right");
+  if (shown < total) L(p, `+${total - shown} more`, W - 400, 0, 400, 56, 30, false, C.muted, "right");
 }
 
-function drawWeather(p) {
+// Weather card: 584 x 640 at (1240, 224)
+function drawWeather(root) {
   const w = tv.data && tv.data.weather;
-  L(p, "Weather" + DOT + state.location.name, 96, 0, 1728, 64, 54, true, C.accent);
-  const ok = w && !w.error;
-  L(p, ok ? num(w.temp) + DEG + "F" : "--" + DEG, 96, 84, 820, 270, 230, true, C.text);
-  L(p, ok ? w.description : (w && w.error) || "Loading weather...", 96, 370, 820, 80, 64, false, C.text);
-  if (ok) L(p, "Feels like " + num(w.feelsLike) + DEG, 96, 456, 820, 64, 48, false, C.secondary);
-  const rows = [["High / Low", ok ? num(w.high) + DEG + " / " + num(w.low) + DEG : "--"],
-    ["Chance of rain", ok ? num(w.precipChance) + "%" : "--"], ["Humidity", ok ? num(w.humidity) + "%" : "--"],
-    ["Wind", ok ? (w.windDir ? w.windDir + " " : "") + num(w.windMph) + " mph" : "--"],
-    ["Sunrise", ok ? isoTime(w.sunrise) : "--"], ["Sunset", ok ? isoTime(w.sunset) : "--"]];
-  const g = G(p, 1000, 96);
-  rows.forEach(([k, v], i) => { L(g, k, 0, i * 84, 380, 84, 44, false, C.muted); L(g, v, 400, i * 84, 424, 84, 50, true, C.text, "right"); });
+  const p = G(root, 1240, 224);
+  R(p, 0, 0, 584, 640, C.card);
+  L(p, state.location.name, 32, 18, 360, 48, 34, true, C.accent);
+  if (!w || w.error) { L(p, "--" + DEG, 32, 70, 270, 150, 140, true, C.text); L(p, (w && w.error) || "Loading...", 32, 228, 520, 44, 30, false, C.secondary); return; }
+  L(p, num(w.temp) + DEG, 32, 70, 270, 150, 140, true, C.text);
+  L(p, w.description, 302, 96, 250, 56, 40, false, C.text);
+  L(p, "H " + num(w.high) + DEG + DOT + "L " + num(w.low) + DEG, 302, 150, 250, 48, 34, false, C.secondary);
+  L(p, "Feels " + num(w.feelsLike) + DEG + DOT + (w.windDir ? w.windDir + " " : "") + num(w.windMph) + " mph" + DOT + num(w.humidity) + "% humidity",
+    32, 228, 520, 44, 30, false, C.secondary);
+  R(p, 32, 290, 520, 2, C.divider);
+  (w.hours || []).slice(0, 5).forEach((h, i) => {
+    const x = 32 + i * 104;
+    L(p, h.label, x, 304, 104, 34, 26, false, C.muted, "center");
+    L(p, num(h.temp) + DEG, x, 338, 104, 52, 40, true, C.text, "center");
+    L(p, h.precip >= 10 ? h.precip + "%" : "", x, 390, 104, 34, 26, false, C.accent, "center");
+  });
+  R(p, 32, 442, 520, 2, C.divider);
+  (w.days || []).slice(0, 3).forEach((d, i) => {
+    const y = 456 + i * 58;
+    L(p, d.name, 32, y, 90, 58, 34, true, C.text);
+    L(p, num(d.high) + DEG + " / " + num(d.low) + DEG, 122, y, 170, 58, 34, false, C.text);
+    L(p, d.description + (d.precip >= 20 ? DOT + d.precip + "%" : ""), 292, y, 260, 58, 28, false, C.muted);
+  });
 }
 
-const PAGE_TITLES = { notes: "Notes", top: "Top Stories", following: "Following", weather: "Weather" };
-
+// Static layers are redrawn on every edit; the news crawl lives in its own layer so it keeps moving.
 function renderTv() {
-  const keys = activeKeys();
-  if (tv.wanted && keys.includes(tv.wanted)) { tv.key = tv.wanted; tv.wanted = ""; }
-  if (!keys.includes(tv.key)) tv.key = keys[0];
-  const root = $("tv"); root.replaceChildren();
+  const root = $("tvStatic");
+  if (!root) return;
+  root.replaceChildren();
   drawHeader(root);
-  const p = G(root, 0, 304);
+  drawNotes(root);
+  drawWeather(root);
+}
+
+// ---------- News crawl (mirrors components/NewsTicker.brs) ----------
+const crawl = { x: 0, width: 0, section: -1, last: 0, track: null, tag: null };
+const CLIP_W = 1404;
+
+function buildTvLayers() {
+  const stage = $("tv");
+  stage.replaceChildren();
+  R(stage, 0, 904, 1920, 176, C.band);
+  R(stage, 0, 904, 1920, 3, C.accent);
+  stage.append(Object.assign(el("div", { id: "tvStatic", className: "r" }), { style: "left:0;top:0;width:1920px;height:1080px" }));
+  R(stage, 96, 930, 300, 70, C.accent);
+  crawl.tag = L(stage, "NEWS", 96, 930, 300, 70, 30, true, C.ink, "center");
+  const clip = el("div", { className: "r" });
+  Object.assign(clip.style, { left: "420px", top: "904px", width: CLIP_W + "px", height: "122px", overflow: "hidden" });
+  crawl.track = el("div", { className: "r" });
+  Object.assign(crawl.track.style, { left: "0", top: "0", height: "122px", display: "flex", alignItems: "center", whiteSpace: "nowrap" });
+  clip.append(crawl.track); stage.append(clip);
+}
+
+function crawlSections() {
   const n = news();
-  if (tv.key === "notes") drawNotes(p);
-  else if (tv.key === "top" || tv.key === "following") drawNews(p, PAGE_TITLES[tv.key], n[tv.key], n.sourceName);
-  else drawWeather(p);
+  if (!n) return [];
+  return state.settings.ticker.sections.filter((k) => (n[k] || []).length);
+}
 
-  R(root, 96, 958, 1728, 2, C.divider);
-  keys.forEach((k, i) => R(root, 96 + i * 32, 984, 18, 18, k === tv.key ? C.text : C.dotOff));
-  let sub = "";
-  if (tv.key === "weather") sub = state.location.name;
-  else if (tv.key !== "notes" && n) sub = n.sourceName;
-  L(root, PAGE_TITLES[tv.key] + (sub ? DOT + sub : ""), 96 + keys.length * 32 + 12, 972, 700, 48, 34, false, C.secondary);
-  L(root, "HomeBoard", 760, 972, 400, 48, 30, true, C.muted, "center");
-  const now = new Date();
-  const stamp = tv.key === "notes" ? "Updated " + hm(now.getHours(), now.getMinutes())
-    : tv.key === "weather" ? "Updated " + hm(now.getHours(), now.getMinutes())
-    : (n && n.stamp) || "Updated " + hm(now.getHours(), now.getMinutes());
-  L(root, stamp, 1024, 972, 800, 48, 30, false, C.muted, "right");
-
-  const tabs = $("tvTabs"); tabs.replaceChildren();
-  keys.forEach((k) => tabs.append(el("button", { textContent: PAGE_TITLES[k], className: k === tv.key ? "on" : "",
-    onclick: () => { tv.key = k; renderTv(); restartRotation(); } })));
+function startPass() {
+  const keys = crawlSections();
+  crawl.track.replaceChildren();
+  if (!keys.length) {
+    crawl.tag.textContent = "NEWS";
+    crawl.track.append(span("Loading headlines...", 44, false, C.secondary));
+    crawl.x = 0; crawl.width = 0; crawl.track.style.transform = "translateX(0)";
+    return;
+  }
+  crawl.section = (crawl.section + 1) % keys.length;
+  const key = keys[crawl.section];
+  crawl.tag.textContent = key === "following" ? "FOLLOWING" : "TOP STORIES";
+  for (const it of news()[key]) {
+    crawl.track.append(span(it.title, 44, true, C.text, 28));
+    if (it.source) crawl.track.append(span(it.source, 32, false, C.muted, 0));
+    const dot = el("span"); Object.assign(dot.style, { display: "inline-block", width: "12px", height: "12px", background: C.accent, margin: "0 56px" });
+    crawl.track.append(dot);
+  }
+  crawl.width = crawl.track.scrollWidth;
+  crawl.x = CLIP_W;
+}
+function span(text, size, bold, color, gap = 0) {
+  const e = el("span", { textContent: text });
+  Object.assign(e.style, { fontSize: size + "px", fontWeight: bold ? "700" : "400", color, marginRight: gap + "px", flex: "none" });
+  return e;
+}
+function tickCrawl(t) {
+  const dt = crawl.last ? Math.min(0.1, (t - crawl.last) / 1000) : 0;
+  crawl.last = t;
+  if (crawl.width) {
+    crawl.x -= SPEEDS[state.settings.ticker.speed] * dt;
+    if (crawl.x < -crawl.width) startPass();
+    crawl.track.style.transform = `translateX(${crawl.x}px)`;
+  }
+  requestAnimationFrame(tickCrawl);
 }
 
 function fitTv() { const vp = $("tvViewport"); $("tv").style.transform = `scale(${vp.clientWidth / 1920})`; }
-function restartRotation() {
-  clearInterval(tv.timer);
-  if (!$("tvRotate").checked) return;
-  const secs = Math.max(5, Number($("seconds").value) || state.settings.secondsPerPage || 25);
-  tv.timer = setInterval(() => { const k = activeKeys(); tv.key = k[(k.indexOf(tv.key) + 1) % k.length]; renderTv(); }, secs * 1000);
-}
 const WMO = { 0: ["Sunny", "Clear"], 1: ["Mostly Sunny", "Mostly Clear"], 2: "Partly Cloudy", 3: "Cloudy", 45: "Fog", 48: "Fog",
   51: "Drizzle", 53: "Drizzle", 55: "Drizzle", 56: "Freezing Drizzle", 57: "Freezing Drizzle", 61: "Light Rain", 63: "Rain",
   65: "Heavy Rain", 66: "Freezing Rain", 67: "Freezing Rain", 71: "Light Snow", 73: "Snow", 75: "Heavy Snow", 77: "Snow Grains",
@@ -427,17 +446,28 @@ async function fetchWeather() {
   if (!parseFloat(lat) && !parseFloat(lon)) return { error: "Set latitude/longitude under Connection" };
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}` +
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day" +
-    "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset" +
-    "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=1";
+    "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code" +
+    "&hourly=temperature_2m,precipitation_probability" +
+    "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=4";
   const j = await fetch(url).then((r) => r.json());
   const c = j.current, d = j.daily, first = (k) => (d[k] || [null])[0];
   const desc = WMO[c.weather_code] ?? "--";
+  const dayDesc = (code) => { const v = WMO[code] ?? "--"; return Array.isArray(v) ? v[0] : v; };
+  const hourLabel = (iso) => { const h = +iso.slice(11, 13); return `${h % 12 || 12} ${h >= 12 ? "PM" : "AM"}`; };
+  const start = j.hourly.time.findIndex((t) => t > c.time);
+  const hours = [];
+  for (let i = start; start >= 0 && i < j.hourly.time.length && hours.length < 5; i += 2)
+    hours.push({ label: hourLabel(j.hourly.time[i]), temp: rnd(j.hourly.temperature_2m[i]), precip: rnd(j.hourly.precipitation_probability[i]) });
+  const days = [1, 2, 3].filter((i) => d.time[i]).map((i) => ({
+    name: new Date(d.time[i] + "T12:00:00").toLocaleDateString("en-US", { weekday: "short" }),
+    high: rnd(d.temperature_2m_max[i]), low: rnd(d.temperature_2m_min[i]),
+    precip: rnd(d.precipitation_probability_max[i]), description: dayDesc(d.weather_code[i]) }));
   return { temp: rnd(c.temperature_2m), feelsLike: rnd(c.apparent_temperature), humidity: rnd(c.relative_humidity_2m),
     windMph: rnd(c.wind_speed_10m),
     windDir: c.wind_direction_10m == null ? null : ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.floor((c.wind_direction_10m + 22.5) / 45) % 8],
     description: Array.isArray(desc) ? desc[c.is_day === 1 ? 0 : 1] : desc,
     high: rnd(first("temperature_2m_max")), low: rnd(first("temperature_2m_min")),
-    precipChance: rnd(first("precipitation_probability_max")), sunrise: first("sunrise"), sunset: first("sunset") };
+    precipChance: rnd(first("precipitation_probability_max")), sunrise: first("sunrise"), sunset: first("sunset"), hours, days };
 }
 
 async function fetchNews() {
@@ -447,7 +477,7 @@ async function fetchNews() {
   const out = { sourceName: CONFIG.digestName, stamp: `${j.edition} edition · ${j.updated_time}`, top: [], following: [] };
   for (const b of j.blocks || []) {
     const key = { top: "top", follow: "following" }[b.kind];
-    if (key) out[key] = (b.stories || []).filter((st) => st.title).slice(0, CONFIG.maxStories).map((st) => ({ title: st.title, meta: meta(st) }));
+    if (key) out[key] = (b.stories || []).filter((st) => st.title).slice(0, CONFIG.maxStories).map((st) => ({ title: st.title, source: st.source || "", meta: meta(st) }));
   }
   return out;
 }
@@ -457,9 +487,8 @@ async function loadTvData() {
   tv.data = { weather: w.status === "fulfilled" ? w.value : { error: "Weather unavailable" },
               news: n.status === "fulfilled" ? n.value : { error: "News unavailable" } };
   renderTv();
+  if (!crawl.width) startPass();   // otherwise new headlines show from the next pass
 }
-// Keep the clock ticking
-setInterval(() => { if (new Date().getSeconds() === 0) renderTv(); }, 1000);
 window.addEventListener("resize", fitTv);
 
 function showSignin(message = "") {
@@ -490,13 +519,12 @@ async function load() {
   $("pubRepo").textContent = `github.com/${CONFIG.repo}/${CONFIG.path}`;
   $("pubWhen").textContent = board.updated ? "Last saved " + new Date(board.updated).toLocaleString() : "";
   $("locName").value = state.location.name; $("locLat").value = state.location.latitude; $("locLon").value = state.location.longitude;
-  fitTv(); renderNotes(); renderPages(); renderTv();
+  fitTv(); renderNotes(); renderBanner(); renderTv();
   setStatus(board.updated ? "Up to date" : "");
   loadTvData();
 }
 
 async function save() {
-  state.settings.secondsPerPage = Number($("seconds").value) || 25;
   const board = { ...cleanBoard(state), updated: new Date().toISOString() };
   $("save").disabled = true; setStatus("Saving…", "show");
   let res;
@@ -506,7 +534,7 @@ async function save() {
   if (res.status === 200 || res.status === 201) {
     sha = res.json.content.sha; state = cleanBoard(board); dirty = false;
     $("pubWhen").textContent = "Last saved " + new Date(board.updated).toLocaleString();
-    renderNotes(); renderPages(); renderTv();
+    renderNotes(); renderBanner(); renderTv();
     setStatus("Saved. The TV picks it up within about 2 minutes.", "ok show");
     setTimeout(() => { if (!dirty) setStatus("Up to date"); }, 4000);
   } else if (res.status === 409 || res.status === 422) {
@@ -524,8 +552,7 @@ $("save").onclick = save;
 $("addNote").onclick = () => addNote(false);
 $("addEvent").onclick = () => addNote(true);
 $("clearPast").onclick = () => { const t = todayKey(); const before = state.notes.length; state.notes = state.notes.filter((n) => !n.date || n.date >= t); if (state.notes.length !== before) { renderNotes(); markDirty(); } };
-$("seconds").addEventListener("input", () => { markDirty(); restartRotation(); });
-$("tvRotate").addEventListener("change", restartRotation);
+$("speed").addEventListener("change", () => { state.settings.ticker.speed = $("speed").value; markDirty(); });
 $("tvRefresh").onclick = () => loadTvData();
 for (const [id, key] of [["locName", "name"], ["locLat", "latitude"], ["locLon", "longitude"]]) {
   $(id).addEventListener("input", () => { state.location[key] = $(id).value; markDirty(); });
@@ -541,7 +568,10 @@ $("tokenInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("s
 $("signout").onclick = () => { if (dirty && !confirm("Discard unsaved changes and sign out?")) return; store.del(TOKEN_KEY); dirty = false; showSignin("Signed out. The token was removed from this browser."); };
 document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); if (dirty) save(); } });
 window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
-load().then(restartRotation);
+buildTvLayers();
+requestAnimationFrame(tickCrawl);
+setInterval(() => { if (new Date().getSeconds() === 0) renderTv(); }, 1000);
+load();
 </script>
 </body>
 </html>
