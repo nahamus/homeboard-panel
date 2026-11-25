@@ -2,10 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com https://api.open-meteo.com https://nahamus.github.io https://api.wikimedia.org https://query1.finance.yahoo.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; manifest-src 'self'; worker-src 'self'; connect-src https://api.github.com https://api.open-meteo.com https://nahamus.github.io https://api.wikimedia.org https://query1.finance.yahoo.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="robots" content="noindex">
 <title>HomeBoard Control</title>
+<!-- Installable app (PWA): Add to Home Screen on iOS/Android, Install on desktop Chrome/Edge -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/favicon-64.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#131a22">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HomeBoard">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   :root {
     --bg: #f4f6f8; --panel: #ffffff; --text: #16202a; --muted: #5d6b78; --line: #dde3e9;
@@ -23,7 +32,9 @@
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line);
-           display: flex; align-items: center; gap: 12px; padding: 12px 24px; }
+           display: flex; align-items: center; gap: 12px; padding: 12px 24px;
+           padding-top: calc(12px + env(safe-area-inset-top)); padding-left: calc(24px + env(safe-area-inset-left)); padding-right: calc(24px + env(safe-area-inset-right)); }
+  body { padding-bottom: env(safe-area-inset-bottom); }
   header h1 { font-size: 18px; margin: 0; flex: 1; }
   .status { font-size: 13px; color: var(--muted); }
   .status.dirty { color: var(--warm); } .status.err { color: var(--danger); } .status.ok { color: var(--ok); }
@@ -102,6 +113,7 @@
 <header>
   <h1>HomeBoard Control</h1>
   <span id="status" class="status">Loading…</span>
+  <button id="install" hidden title="Install HomeBoard as an app">Install app</button>
   <button id="save" class="primary" disabled>Save</button>
 </header>
 
@@ -988,6 +1000,14 @@ function restartSpot() {
 restartSpot();
 setInterval(() => { if (new Date().getSeconds() === 0) renderTv(); }, 1000);
 load();
+
+// ---------- Installable app ----------
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+// Chrome/Edge/Android offer an install prompt; iOS uses Share > Add to Home Screen instead.
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; $("install").hidden = false; });
+$("install").onclick = async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; $("install").hidden = true; };
+window.addEventListener("appinstalled", () => { $("install").hidden = true; });
 </script>
 </body>
 </html>
