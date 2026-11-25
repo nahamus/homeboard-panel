@@ -510,7 +510,8 @@ async function save() {
     if (confirm("The notes were changed on another device. Load the latest version? (Your unsaved edits here will be lost.)")) load();
   } else if (res.status === 401 || res.status === 403 || res.status === 404) {
     $("save").disabled = false;
-    setStatus("Save refused (" + res.status + "): the token needs Contents: Read and write on " + CONFIG.repo + ".", "err show");
+    const why = res.json && res.json.message ? ` GitHub says: "${res.json.message}".` : "";
+    setStatus(`Save refused (${res.status}).${why} This token can read but not write: give it Contents: Read and write on ${CONFIG.repo} (or sign out and use a panel token, not the TV's read-only one).`, "err show");
   } else { $("save").disabled = false; setStatus("Save failed: GitHub error " + res.status, "err show"); }
 }
 
