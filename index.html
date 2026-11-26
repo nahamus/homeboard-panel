@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; manifest-src 'self'; worker-src 'self'; connect-src https://api.github.com https://api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://nahamus.github.io https://api.wikimedia.org https://query1.finance.yahoo.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; manifest-src 'self'; worker-src 'self'; connect-src https://api.github.com https://api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://nahamus.github.io https://api.wikimedia.org; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="robots" content="noindex">
 <title>HomeBoard Control</title>
 <!-- Installable app (PWA): Add to Home Screen on iOS/Android, Install on desktop Chrome/Edge -->
@@ -312,6 +312,8 @@
 </main>
 
 <script>
+// Refuse to run inside another site's frame (clickjacking); GitHub Pages can't send frame-ancestors.
+if (window.top !== window.self) { document.body.replaceChildren(); throw new Error("HomeBoard Control can't run in a frame"); }
 const CONFIG = {
   repo: "nahamus/homeboard-data", path: "board.json",
   digestUrl: "https://nahamus.github.io/news-digest/latest.json", digestName: "News Digest", maxStories: 8,
@@ -327,7 +329,7 @@ const SKIES = ["auto", "night", "dawn", "day", "dusk", "cloudy", "rain", "snow",
 const SPOT_NAMES = { markets: "Markets", onthisday: "On this day", countdowns: "Countdowns" };
 const ALL_SPOT = Object.keys(SPOT_NAMES);
 const REPEATS = { "": "Once", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", yearly: "Yearly" };
-let state = { notes: [], countdowns: [], location: { name: "Home", latitude: "", longitude: "" },
+let state = { notes: [], location: { name: "Home", latitude: "", longitude: "" },
   settings: { ticker: { sections: [...DEFAULT_SECTIONS], speed: "normal" }, sky: "auto", spotlight: { modules: [...ALL_SPOT], tickers: ["BTC-USD"], seconds: 45 },
     night: { enabled: false, start: "22:00", end: "06:30" } }, message: null };
 let dirty = false;
@@ -368,7 +370,6 @@ function cleanBoard(b) {
   const sp = (b.settings || {}).spotlight || {};
   const modules = Array.isArray(sp.modules) ? [...new Set(sp.modules.filter((k) => ALL_SPOT.includes(k)))] : [...ALL_SPOT];
   const tickers = Array.isArray(sp.tickers) ? sp.tickers.map((x) => t(x, 15).toUpperCase()).filter(Boolean).slice(0, 6) : ["BTC-USD"];
-  const countdowns = (b.countdowns || []).filter((c) => c && t(c.title, 80)).map((c) => ({ title: t(c.title, 80), date: t(c.date, 10), yearly: !!c.yearly }));
   const seconds = [20, 30, 45, 60, 90, 120].includes(+sp.seconds) ? +sp.seconds : 45;
   const nt = (b.settings || {}).night || {}, hhmm = (v, d) => (/^\d{2}:\d{2}$/.test(v || "") ? v : d);
   const night = { enabled: nt.enabled === true, start: hhmm(nt.start, "22:00"), end: hhmm(nt.end, "06:30") };
@@ -377,7 +378,7 @@ function cleanBoard(b) {
   const msgUntil = Number.isFinite(+mg.until) ? Math.floor(+mg.until) : 0;
   const message = t(mg.text, 160) && (!msgUntil || msgUntil * 1000 > Date.now())
     ? { text: t(mg.text, 160), sentAt: Math.floor(+mg.sentAt) || 0, until: msgUntil } : null;
-  return { notes, countdowns, settings: { ticker: { sections, speed }, sky, spotlight: { modules, tickers, seconds }, night },
+  return { notes, settings: { ticker: { sections, speed }, sky, spotlight: { modules, tickers, seconds }, night },
            location: { name: t(loc.name, 60) || "Home", latitude: t(loc.latitude, 20), longitude: t(loc.longitude, 20) },
            ...(message ? { message } : {}) };
 }
@@ -474,7 +475,7 @@ function renderAll() {
 function cancelChanges() {
   if (!dirty || !confirm("Undo all changes since the last save?")) return;
   state = cleanBoard(savedBoard); setDirty(false);
-  renderAll(); restartSpot(); loadMarkets();
+  renderAll(); restartSpot();
   setStatus("Changes undone", "ok"); setTimeout(() => { if (!dirty) setStatus("Up to date"); }, 3000);
 }
 
@@ -701,11 +702,6 @@ function holidays(y) {
 function countdownList() {
   const today = new Date(todayKey() + "T00:00:00"), y = today.getFullYear();
   const all = [...holidays(y), ...holidays(y + 1)].map(([title, dateKey]) => ({ title, dateKey, mine: false }));
-  for (const c of state.countdowns) {
-    if (!c.title.trim() || c.date.length !== 10) continue;
-    if (c.yearly) for (const yy of [y, y + 1]) all.push({ title: c.title, dateKey: yy + c.date.slice(4), mine: true });
-    else all.push({ title: c.title, dateKey: c.date, mine: true });
-  }
   return all.map((c) => ({ ...c, days: Math.round((new Date(c.dateKey + "T00:00:00") - today) / 86400000) }))
     .filter((c) => c.days >= 0 && c.days <= 365).sort((a, b) => a.days - b.days || a.title.localeCompare(b.title));
 }
@@ -776,21 +772,6 @@ function drawCountdowns(p, W, H) {
     L(p, c.title, 190, y, W - 190 - 260, rowH, 40, true, C.text);
     L(p, new Date(c.dateKey + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), W - 260, y, 260, rowH, 30, false, C.secondary, "right");
   });
-}
-
-async function loadMarkets() {
-  // Yahoo Finance doesn't allow browser (CORS) requests, so this usually fails and the
-  // preview shows the layout with placeholders; the TV fetches the real numbers.
-  try {
-    const items = [];
-    for (const sym of ["^GSPC", "^DJI", "^IXIC", ...state.settings.spotlight.tickers]) {
-      const j = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=15m`).then((r) => r.json());
-      const m = j.chart.result[0].meta, prev = m.chartPreviousClose ?? m.previousClose;
-      items.push({ name: { "^GSPC": "S&P 500", "^DJI": "Dow", "^IXIC": "Nasdaq", "BTC-USD": "Bitcoin" }[sym] || sym, price: m.regularMarketPrice, changePct: prev ? (m.regularMarketPrice - prev) / prev * 100 : null });
-    }
-    tv.markets = { items };
-  } catch { tv.markets = null; }
-  renderTv();
 }
 
 async function loadOnThisDay() {
@@ -970,7 +951,9 @@ function tomorrowNote() {
 }
 
 // Static layers are redrawn on every edit; the news crawl lives in its own layer so it keeps moving.
-function renderTv() {
+let tvFrame = 0;
+function renderTv() { if (!tvFrame) tvFrame = requestAnimationFrame(() => { tvFrame = 0; renderTvNow(); }); }
+function renderTvNow() {
   const root = $("tvStatic");
   if (!root) return;
   renderSky();
@@ -1292,7 +1275,6 @@ async function load() {
   setStatus(board.updated ? "Up to date" : "");
   loadTvData();
   loadOnThisDay();
-  loadMarkets();
   restartSpot();
 }
 
@@ -1329,7 +1311,6 @@ $("tickers").addEventListener("input", () => {
   state.settings.spotlight.tickers = $("tickers").value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean).slice(0, 6);
   markDirty();
 });
-$("tickers").addEventListener("change", () => loadMarkets());
 $("spotSecs").addEventListener("change", () => { state.settings.spotlight.seconds = +$("spotSecs").value; markDirty(); restartSpot(); });
 $("sky").addEventListener("change", () => { state.settings.sky = $("sky").value; markDirty(); renderSky(); });
 $("tvRefresh").onclick = () => loadTvData();
