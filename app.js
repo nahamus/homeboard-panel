@@ -15,7 +15,7 @@ const sectionKey = (v) => String(v ?? "").trim().toLowerCase().replace(/[^a-z0-9
 const sectionName = (k) => SECTION_NAMES[k] || k.charAt(0).toUpperCase() + k.slice(1);
 const SPEEDS = { slow: 80, normal: 110, fast: 150 };   // px per second, same as the TV
 const SKIES = ["auto", "night", "dawn", "day", "dusk", "cloudy", "rain", "snow", "storm", "fog"];
-const SPOT_NAMES = { markets: "Markets", onthisday: "On this day", countdowns: "Countdowns" };
+const SPOT_NAMES = { markets: "Markets", onthisday: "On this day", countdowns: "Countdowns", hourly: "Next 12 hours" };
 const ALL_SPOT = Object.keys(SPOT_NAMES);
 const REPEATS = { "": "Once", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", yearly: "Yearly" };
 let state = { notes: [], location: { name: "Home", latitude: "", longitude: "" },
@@ -397,12 +397,24 @@ function countdownList() {
 const daysText = (d) => (d === 0 ? "Today" : d === 1 ? "Tomorrow" : `In ${d} days`);
 const money = (v) => (typeof v !== "number" ? "--" : v.toLocaleString("en-US", { minimumFractionDigits: v >= 10000 ? 0 : 2, maximumFractionDigits: v >= 10000 ? 0 : 2 }));
 
+// Preview-only overrides (the Rain and 12 h toggles above the preview); not saved, never sent to the TV.
+function previewWeather() {
+  const w = tv.data && tv.data.weather;
+  if (!w || w.error || !tv.previewRain) return w;
+  const d = new Date(Date.now() + 45 * 60000); d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
+  const chances = [0, 5, 10, 20, 45, 70, 80, 60, 30, 15, 10, 0, 0];
+  return { ...w, rainNote: `Rain starting around ${hm(d.getHours(), d.getMinutes())}`,
+           next12: (w.next12 || []).map((q, i) => ({ ...q, precip: chances[i] ?? 0 })) };
+}
+
 function spotModules() {
+  if (tv.previewHourly && ((previewWeather() || {}).next12 || []).length >= 2) return ["hourly"];
   const out = [];
   for (const k of state.settings.spotlight.modules) {
     if (k === "markets") out.push(k);   // shown even without live data (the TV has it)
     if (k === "onthisday" && tv.otd && tv.otd.items.length) out.push(k);
     if (k === "countdowns") out.push(k);
+    if (k === "hourly" && tv.data && tv.data.weather && (tv.data.weather.next12 || []).length >= 2) out.push(k);
   }
   return out;
 }
@@ -416,6 +428,39 @@ function drawSpotlight(root, cardY, cardH) {
   if (key === "markets") drawMarkets(p, W, H);
   if (key === "onthisday") drawOnThisDay(p, W, H);
   if (key === "countdowns") drawCountdowns(p, W, H);
+  if (key === "hourly") drawHourly(p, W, H);
+}
+
+// Temperature line + rain-chance bars, now and the next 12 hours (mirrors drawHourly() in SpotlightPanel.brs)
+function drawHourly(p, W, H) {
+  const pts = previewWeather().next12, n = pts.length, temps = pts.map((q) => q.temp).filter((v) => typeof v === "number");
+  if (!temps.length) return;
+  const lo = Math.min(...temps), hi = Math.max(...temps), hiAt = pts.find((q) => q.temp === hi).label;
+  L(p, "NEXT 12 HOURS", 0, 0, 700, 40, 28, true, C.heading);
+  L(p, `High ${hi}${DEG} at ${hiAt}${DOT}Low ${lo}${DEG}`, W - 500, 0, 500, 40, 26, false, C.muted, "right");
+  const xL = 40, xR = W - 40, yBot = H - 36, yTop = Math.min(58 + 40, yBot - 60), stepX = (xR - xL) / (n - 1);
+  const span = Math.max(4, hi - lo), lineTop = yTop + 6, lineH = (yBot - yTop) * 0.42, maxBar = (yBot - yTop) * 0.42, barW = stepX * 0.46;
+  pts.forEach((q, i) => {
+    if (!(q.precip >= 10)) return;
+    const bh = maxBar * q.precip / 100;
+    R(p, xL + i * stepX - barW / 2, yBot - bh, barW, bh, "rgba(108,180,255,.27)");
+    if (q.precip >= 30 && yBot - yTop >= 150) L(p, q.precip + "%", xL + i * stepX - 50, yBot - bh - 30, 100, 28, 22, true, C.accent, "center");
+  });
+  R(p, xL - 20, yBot, xR - xL + 40, 1, "rgba(255,255,255,.15)");
+  const ys = pts.map((q) => lineTop + lineH - ((typeof q.temp === "number" ? q.temp : lo) - lo) / span * lineH);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  Object.assign(svg.style, { position: "absolute", left: "0", top: "0", overflow: "visible" });
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  line.setAttribute("points", ys.map((y, i) => `${xL + i * stepX},${y}`).join(" "));
+  Object.assign(line.style, { fill: "none", stroke: C.warm, strokeWidth: "4" });
+  svg.append(line); p.append(svg);
+  for (let i = 0; i < n; i += 3) {
+    const x = xL + i * stepX;
+    R(p, x - 6, ys[i] - 6, 12, 12, C.warm);
+    L(p, num(pts[i].temp) + DEG, x - 60, ys[i] - 46, 120, 36, 30, true, C.text, "center");
+    L(p, i === 0 ? "Now" : pts[i].label, x - 70, yBot + 4, 140, 32, 24, false, C.muted, "center");
+  }
 }
 
 function drawMarkets(p, W, H) {
@@ -476,7 +521,7 @@ async function loadOnThisDay() {
 
 // Weather card: glass 600 x 760 at (1264, 190)
 function drawWeather(root) {
-  const w = tv.data && tv.data.weather;
+  const w = previewWeather();
   Glass(root, 1264, 190, 600, 760);
   const p = G(root, 1264, 190);
   const alerts = activeAlerts();
@@ -503,7 +548,8 @@ function drawWeather(root) {
                Object.assign(el("span", { textContent: level }), { style: `font-size:26px;font-weight:700;color:${color}` }));
   });
   L(p, w.description + DOT + "H " + num(w.high) + DEG + "  L " + num(w.low) + DEG, 36, 234, 528, 50, 38, false, C.text);
-  L(p, "Feels " + num(w.feelsLike) + DEG + DOT + (w.windDir ? w.windDir + " " : "") + num(w.windMph) + " mph" + DOT + num(w.humidity) + "% humidity",
+  if (w.rainNote) L(p, w.rainNote, 36, 284, 528, 40, 28, false, C.accent);   // mirrors WeatherPanel.brs
+  else L(p, "Feels " + num(w.feelsLike) + DEG + DOT + (w.windDir ? w.windDir + " " : "") + num(w.windMph) + " mph" + DOT + num(w.humidity) + "% humidity",
     36, 284, 528, 40, 28, false, C.secondary);
   R(p, 36, 344, 528, 1, C.hair);
   // From 6 PM a "Tomorrow" summary replaces the next hours, and the day list starts a day later
@@ -876,6 +922,22 @@ function weatherIcon(code, isDay) {
   return "cloudy";
 }
 
+// Rain (or snow at 33F and below) starting or stopping within the next few hours, from the
+// 15-minute forecast; "" when it stays dry. Mirrors rainNote() in components/tasks/FetchTask.brs.
+function rainNote(mq, nowIso, tempF) {
+  if (!mq || !mq.time || !mq.precipitation) return "";
+  const word = tempF <= 33 ? "Snow" : "Rain", wet = (v) => typeof v === "number" && v >= 0.1;
+  const t = mq.time, r = mq.precipitation, n = Math.min(t.length, r.length), start = t.findIndex((x) => x >= nowIso);
+  const at = (iso) => { const h = +iso.slice(11, 13); return `${h % 12 || 12}:${iso.slice(14, 16)} ${h >= 12 ? "PM" : "AM"}`; };
+  if (start < 0) return "";
+  if (wet(r[start])) {
+    for (let j = start + 1; j < n; j++) if (!wet(r[j]) && (j + 1 >= n || !wet(r[j + 1]))) return `${word} stopping around ${at(t[j])}`;
+    return `${word} for the next few hours`;
+  }
+  for (let j = start + 1; j <= Math.min(start + 12, n - 1); j++) if (wet(r[j])) return `${word} starting around ${at(t[j])}`;
+  return "";
+}
+
 async function fetchWeather() {
   const { latitude: lat, longitude: lon } = state.location;
   if (!parseFloat(lat) && !parseFloat(lon)) return { error: "Set latitude/longitude under Connection" };
@@ -883,6 +945,7 @@ async function fetchWeather() {
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day" +
     "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code,uv_index_max" +
     "&hourly=temperature_2m,precipitation_probability,weather_code,is_day" +
+    "&minutely_15=precipitation&forecast_minutely_15=16" +
     "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=6";
   const j = await fetch(url).then((r) => r.json());
   const c = j.current, d = j.daily, first = (k) => (d[k] || [null])[0];
@@ -896,6 +959,9 @@ async function fetchWeather() {
                  icon: weatherIcon(j.hourly.weather_code[i], j.hourly.is_day[i] !== 0) });
   let cur = 0;
   j.hourly.time.forEach((t, i) => { if (t <= c.time) cur = i; });
+  // Now + 12 hours for the Spotlight hourly chart (mirrors nextTwelve() in FetchTask.brs)
+  const next12 = j.hourly.time.slice(cur, cur + 13).map((t, k) => ({
+    label: hourLabel(t), temp: rnd(j.hourly.temperature_2m[cur + k]), precip: rnd(j.hourly.precipitation_probability[cur + k]) }));
   const next24 = j.hourly.time.slice(cur, cur + 24).map((t, k) => ({
     hour: +t.slice(11, 13), temp: rnd(j.hourly.temperature_2m[cur + k]), precip: rnd(j.hourly.precipitation_probability[cur + k]) }));
   const days = [1, 2, 3, 4, 5].filter((i) => d.time[i]).map((i) => ({
@@ -907,7 +973,8 @@ async function fetchWeather() {
     windDir: c.wind_direction_10m == null ? null : ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.floor((c.wind_direction_10m + 22.5) / 45) % 8],
     description: Array.isArray(desc) ? desc[c.is_day === 1 ? 0 : 1] : desc,
     high: rnd(first("temperature_2m_max")), low: rnd(first("temperature_2m_min")),
-    precipChance: rnd(first("precipitation_probability_max")), uvMax: rnd(first("uv_index_max")), aqi: await fetchAqi().catch(() => null), sunrise: first("sunrise"), sunset: first("sunset"), hours, days, next24,
+    precipChance: rnd(first("precipitation_probability_max")), uvMax: rnd(first("uv_index_max")), aqi: await fetchAqi().catch(() => null), sunrise: first("sunrise"), sunset: first("sunset"), hours, days, next24, next12,
+    rainNote: rainNote(j.minutely_15, c.time, c.temperature_2m),
     icon: weatherIcon(c.weather_code, c.is_day === 1), isDay: c.is_day === 1, code: c.weather_code };
 }
 
@@ -934,9 +1001,10 @@ async function loadTvData() {
 }
 window.addEventListener("resize", fitTv);
 
-function showSignin(message = "") {
+// The sign-in card is public: its messages never name the repo or the org.
+function showSignin(message = "", opts = {}) {
   $("app").hidden = true; $("signin").hidden = false; $("save").hidden = true; $("cancel").hidden = true; document.body.classList.remove("signed-in");
-  $("repoName").textContent = CONFIG.repo; $("signinMsg").textContent = message;
+  $("signinMsg").textContent = message; $("signinMsg").className = "signin-msg" + (opts.ok ? " ok" : "");
   setStatus("");
 }
 
@@ -945,13 +1013,13 @@ async function load() {
   setStatus("Loading…");
   let res;
   try { res = await github("GET"); } catch (e) { setStatus("Could not reach GitHub: " + e.message, "err"); return; }
-  if (res.status === 401) return showSignin("That token was rejected (expired or revoked). Paste a new one.");
+  if (res.status === 401) { store.del(TOKEN_KEY); return showSignin("That token didn't work. It may have expired or been revoked."); }
   // GitHub answers 404 (not 403) when a token can't see a private repo. board.json always
   // exists in the data repo, so treat 404 as "wrong token" rather than starting from an
   // empty board that a save would then write over the real notes.
   if (res.status === 403 || res.status === 404) {
     store.del(TOKEN_KEY);
-    return showSignin(`This token can't see ${CONFIG.repo}. Edit it on GitHub: Repository access → Only select repositories → ${CONFIG.repo.split("/")[1]} (the private data repo, not homeboard-panel), Contents: Read and write. Then sign in again.`);
+    return showSignin("That token can't open the board. Check its repository access and that it has Contents: Read and write.");
   }
   let board = {};
   if (res.status === 200) { sha = res.json.sha; board = JSON.parse(fromB64(res.json.content)); }
@@ -1010,6 +1078,8 @@ $("msgClear").onclick = () => { $("msgText").value = ""; editMessage(); };
 $("nightOn").addEventListener("change", () => { state.settings.night.enabled = $("nightOn").checked; renderNightSettings(); markDirty(); });
 for (const [id, key] of [["nightStart", "start"], ["nightEnd", "end"]])
   $(id).addEventListener("change", () => { if (clockMin($(id).value) >= 0) { state.settings.night[key] = $(id).value; markDirty(); } else renderNightSettings(); });
+for (const [id, key] of [["previewRain", "previewRain"], ["previewHourly", "previewHourly"]])   // preview-only toggles
+  $(id).onclick = () => { tv[key] = !tv[key]; $(id).setAttribute("aria-pressed", String(tv[key])); renderTv(); };
 $("nightPreview").onclick = () => { tv.previewNight = !tv.previewNight; $("nightPreview").setAttribute("aria-pressed", String(tv.previewNight)); renderTv(); };
 for (const [id, key] of [["locName", "name"], ["locLat", "latitude"], ["locLon", "longitude"]]) {
   $(id).addEventListener("input", () => { state.location[key] = $(id).value; markDirty(); });
@@ -1022,7 +1092,7 @@ $("signinBtn").onclick = async () => {
   await load();
 };
 $("tokenInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("signinBtn").click(); });
-$("signout").onclick = () => { if (dirty && !confirm("Discard unsaved changes and sign out?")) return; store.del(TOKEN_KEY); setDirty(false); showSignin("Signed out. The token was removed from this browser."); };
+$("signout").onclick = () => { if (dirty && !confirm("Discard unsaved changes and sign out?")) return; store.del(TOKEN_KEY); setDirty(false); showSignin("Signed out. The token was removed from this device.", { ok: true }); };
 document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); if (dirty) save(); } });
 window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 buildTvLayers();
