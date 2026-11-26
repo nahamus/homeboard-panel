@@ -10,7 +10,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/favicon-64.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<meta name="theme-color" content="#131a22">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#131a22">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="HomeBoard">
@@ -36,17 +37,27 @@
            display: flex; align-items: center; gap: 12px; padding: 12px 24px;
            padding-top: calc(12px + env(safe-area-inset-top)); padding-left: calc(24px + env(safe-area-inset-left)); padding-right: calc(24px + env(safe-area-inset-right)); }
   body { padding-bottom: env(safe-area-inset-bottom); }
-  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  header h1 { font-size: 18px; margin: 0; flex: 1; letter-spacing: -.01em; }
+  header .logo { width: 28px; height: 28px; border-radius: 7px; flex: none; }
   .status { font-size: 13px; color: var(--muted); }
+  .status:not(:empty) { background: var(--chip); border-radius: 999px; padding: 4px 12px; }
   .status.dirty { color: var(--warm); } .status.err { color: var(--danger); } .status.ok { color: var(--ok); }
   main { max-width: 1200px; margin: 0 auto; padding: 24px; display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr); }
   @media (max-width: 900px) { main { padding: 16px; } }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
-  h2 { font-size: 15px; margin: 0 0 4px; } .hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  h2 { font-size: 16px; margin: 0 0 4px; letter-spacing: -.01em; } .hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 20px 0 8px; }
+  h3 label { color: inherit; }
+  h2 + h3 { margin-top: 14px; }
+  .hint.after { margin: 8px 0 0; }
+  select.full, #tickers { width: 100%; }
   button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--text);
            border-radius: 7px; padding: 6px 12px; cursor: pointer; }
-  button:hover { border-color: var(--muted); }
+  button { transition: border-color .15s, background-color .15s, opacity .15s; }
+  button:hover:not(:disabled) { border-color: var(--muted); }
   button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button.icon { padding: 4px 8px; line-height: 1; }
   button:disabled { opacity: .4; cursor: default; }
   input[type=text], input[type=date], input[type=time], input[type=number] {
@@ -75,14 +86,11 @@
   .page:first-of-type { border-top: 0; }
   .page label { flex: 1; display: flex; gap: 8px; align-items: center; }
   .field { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
-  .field input { width: 90px; }
   .tv-url { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: var(--chip);
             padding: 6px 8px; border-radius: 6px; word-break: break-all; }
   aside { display: grid; gap: 24px; align-content: start; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
   .tv-section { grid-column: 1 / -1; }
   .tv-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
-  .tv-bar .tabs { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
-  .tv-bar .tabs button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   .tv-bar label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
   .tv-frame { background: #000; border-radius: 10px; padding: 10px; }
   .tv-viewport { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 3px; }
@@ -102,7 +110,7 @@
   #signin ol b { color: var(--text); }
   #signin input[type=password] { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line);
     border-radius: 6px; padding: 8px 10px; width: 100%; margin: 6px 0 12px; }
-  .loc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .loc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .loc label { font-size: 12px; color: var(--muted); display: grid; gap: 3px; }
   .loc label.wide { grid-column: 1 / -1; }
   /* ---- Phones and touch screens (the TV preview's own styles are untouched) ---- */
@@ -127,7 +135,8 @@
     main { padding: 12px; gap: 14px; }
     aside { gap: 14px; }
     section { padding: 16px 14px; border-radius: 14px; }
-    h2 { font-size: 17px; } .hint { font-size: 14px; }
+    h2 { font-size: 17px; } .hint { font-size: 14px; } h3 { font-size: 12.5px; }
+    .status:not(:empty) { background: none; padding: 0; }
     /* each note becomes its own small card */
     .note { grid-template-columns: 30px 1fr 1fr; gap: 8px; padding: 12px 10px; margin-top: 10px;
             border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
@@ -136,16 +145,16 @@
     .row-actions .del { margin-left: auto; }
     .toolbar { gap: 10px; } .toolbar button { flex: 1 1 auto; }
     .field { flex-wrap: wrap; } .field select { flex: 1; min-width: 0; }
-    .field.stack { display: grid; gap: 6px; } .field.stack input { width: 100%; }
     .loc label { font-size: 13px; }
     #signin { margin: 16px 12px; padding: 18px 16px; }
-    #signin button { width: 100%; }
+    #signin button, #signout { width: 100%; }
     /* Save + status live in a bar at the bottom, in thumb reach */
     body.signed-in { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
     body.signed-in #status { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; align-items: center;
       min-height: calc(68px + env(safe-area-inset-bottom)); padding: 10px 136px calc(10px + env(safe-area-inset-bottom)) 16px;
       background: var(--panel); border-top: 1px solid var(--line); font-size: 14px; box-shadow: 0 -4px 16px rgba(0,0,0,.12); }
     body.signed-in #status:empty::before { content: "No changes"; }
+    body.signed-in #status { border-radius: 0; }
     body.signed-in #save { position: fixed; right: 16px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 7;
       min-width: 108px; min-height: 44px; font-size: 16px; }
   }
@@ -153,6 +162,7 @@
 </head>
 <body>
 <header>
+  <img class="logo" src="icons/favicon-64.png" alt="" width="28" height="28">
   <h1>HomeBoard Control</h1>
   <span id="status" class="status">Loading…</span>
   <button id="install" hidden title="Install HomeBoard as an app">Install app</button>
@@ -198,15 +208,16 @@
   <aside>
     <section>
       <h2>Display</h2>
-      <div class="field" style="margin:0 0 6px"><label for="sky">Sky</label>
-        <select id="sky">
-          <option value="auto">Automatic (follow the weather)</option>
-          <option value="night">Night</option><option value="dawn">Dawn</option><option value="day">Day</option>
-          <option value="dusk">Dusk</option><option value="cloudy">Cloudy</option><option value="rain">Rain</option>
-          <option value="snow">Snow</option><option value="storm">Storm</option><option value="fog">Fog</option>
-        </select></div>
-      <p class="hint">Pick a scene to try it out (it shows on the TV too). Set it back to Automatic afterwards.</p>
-      <p class="hint" style="margin:14px 0 6px"><b>News banner</b>: headlines from your news digest crawl along the bottom, one section per pass.</p>
+      <h3>Sky</h3>
+      <select id="sky" class="full" aria-label="Sky">
+        <option value="auto">Automatic (follow the weather)</option>
+        <option value="night">Night</option><option value="dawn">Dawn</option><option value="day">Day</option>
+        <option value="dusk">Dusk</option><option value="cloudy">Cloudy</option><option value="rain">Rain</option>
+        <option value="snow">Snow</option><option value="storm">Storm</option><option value="fog">Fog</option>
+      </select>
+      <p class="hint after">Pick a scene to try it out (it shows on the TV too), then set it back to Automatic.</p>
+      <h3>News banner</h3>
+      <p class="hint">Headlines from your news digest crawl along the bottom, one section per pass.</p>
       <div id="banner"></div>
       <div class="field"><label for="speed">Scroll speed</label>
         <select id="speed"><option value="slow">Slow</option><option value="normal">Normal</option><option value="fast">Fast</option></select></div>
@@ -214,25 +225,27 @@
 
     <section>
       <h2>Spotlight</h2>
-      <p class="hint">Fills the free space under "Coming up", rotating between the modules below.</p>
+      <p class="hint">Fills the free space under "Coming up", rotating between these modules.</p>
       <div id="spotMods"></div>
       <div class="field"><label for="spotSecs">Seconds per module</label>
         <select id="spotSecs"><option value="20">20</option><option value="30">30</option><option value="45">45</option><option value="60">60</option><option value="90">90</option><option value="120">120</option></select></div>
-      <div class="field stack"><label for="tickers">Extra tickers</label><input id="tickers" type="text" placeholder="NVDA, AAPL, BTC-USD" style="width:100%"></div>
-      <p class="hint" style="margin:6px 0 0">Shown after the S&amp;P 500, Dow and Nasdaq. Up to 6, Yahoo Finance symbols (crypto like BTC-USD).</p>
+      <h3><label for="tickers">Extra tickers</label></h3>
+      <input id="tickers" type="text" placeholder="NVDA, AAPL, BTC-USD" autocapitalize="characters" autocomplete="off" spellcheck="false">
+      <p class="hint after">Shown after the S&amp;P 500, Dow and Nasdaq. Up to 6 Yahoo Finance symbols (crypto like BTC-USD).</p>
     </section>
 
     <section>
       <h2>Connection</h2>
       <p class="hint">Save commits to this private repo. The TV reads it from there within about 2 minutes.</p>
       <div class="tv-url" id="pubRepo"></div>
-      <p class="hint" id="pubWhen" style="margin:10px 0"></p>
+      <p class="hint after" id="pubWhen"></p>
+      <h3>Preview location</h3>
       <div class="loc">
-        <label class="wide">Location name<input id="locName" type="text" placeholder="Home"></label>
+        <label class="wide">Name<input id="locName" type="text" placeholder="Home"></label>
         <label>Latitude<input id="locLat" type="text" inputmode="decimal" placeholder="34.03"></label>
         <label>Longitude<input id="locLon" type="text" inputmode="decimal" placeholder="-83.98"></label>
       </div>
-      <p class="hint" style="margin:6px 0 12px">Used for the preview's weather. The TV uses its own config for weather.</p>
+      <p class="hint after">Only for the preview's weather. The TV uses its own config.</p>
       <button id="signout">Sign out on this device</button>
     </section>
   </aside>
@@ -960,26 +973,26 @@ async function load() {
 
 async function save() {
   const board = { ...cleanBoard(state), updated: new Date().toISOString() };
-  $("save").disabled = true; setStatus("Saving…", "show");
+  $("save").disabled = true; setStatus("Saving…");
   let res;
   try {
     res = await github("PUT", { message: "Update HomeBoard notes", content: toB64(JSON.stringify(board, null, 2) + "\n"), ...(sha ? { sha } : {}) });
-  } catch (e) { $("save").disabled = false; setStatus("Save failed: " + e.message, "err show"); return; }
+  } catch (e) { $("save").disabled = false; setStatus("Save failed: " + e.message, "err"); return; }
   if (res.status === 200 || res.status === 201) {
     sha = res.json.content.sha; state = cleanBoard(board); dirty = false;
     $("pubWhen").textContent = "Last saved " + new Date(board.updated).toLocaleString();
     renderNotes(); renderBanner(); renderSpotlightSettings(); renderTv();
-    setStatus("Saved. The TV picks it up within about 2 minutes.", "ok show");
+    setStatus("Saved. The TV picks it up within about 2 minutes.", "ok");
     setTimeout(() => { if (!dirty) setStatus("Up to date"); }, 4000);
   } else if (res.status === 409 || res.status === 422) {
     $("save").disabled = false;
-    setStatus("Changed on another device since you opened it.", "err show");
+    setStatus("Changed on another device since you opened it.", "err");
     if (confirm("The notes were changed on another device. Load the latest version? (Your unsaved edits here will be lost.)")) load();
   } else if (res.status === 401 || res.status === 403 || res.status === 404) {
     $("save").disabled = false;
     const why = res.json && res.json.message ? ` GitHub says: "${res.json.message}".` : "";
-    setStatus(`Save refused (${res.status}).${why} This token can read but not write: give it Contents: Read and write on ${CONFIG.repo} (or sign out and use a panel token, not the TV's read-only one).`, "err show");
-  } else { $("save").disabled = false; setStatus("Save failed: GitHub error " + res.status, "err show"); }
+    setStatus(`Save refused (${res.status}).${why} This token can read but not write: give it Contents: Read and write on ${CONFIG.repo} (or sign out and use a panel token, not the TV's read-only one).`, "err");
+  } else { $("save").disabled = false; setStatus("Save failed: GitHub error " + res.status, "err"); }
 }
 
 $("save").onclick = save;
