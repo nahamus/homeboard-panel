@@ -65,7 +65,7 @@
     border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; }
   input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   select { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
-  .note { display: grid; grid-template-columns: 22px minmax(0, 2fr) 160px 130px 150px minmax(0, 1.5fr) auto;
+  .note { display: grid; grid-template-columns: 22px minmax(0, 2fr) 150px 124px 140px minmax(0, 1.5fr) 36px;
           gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
   .note.head { border-top: 0; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding-top: 0; }
   .note.hidden input[type=text] { opacity: .5; }
@@ -75,27 +75,59 @@
   .row-actions { display: flex; gap: 4px; }
   .note label.show { display: flex; align-items: center; justify-content: center; align-self: stretch; cursor: pointer; }
   @media (max-width: 700px) {
-    .note { grid-template-columns: 22px 1fr 1fr; }
-    .note .title, .note .details { grid-column: 2 / -1; }
-    .note input[type=date] { grid-column: 2; }
-    .note input[type=time] { grid-column: 3; }
-    .note select.repeat { grid-column: 2 / -1; }
+    /* each event: [show] title [x] / date time / repeat / details */
+    .note { grid-template-columns: 30px minmax(0, 1.3fr) minmax(0, .7fr) 44px;
+            grid-template-areas: "show title title del" ". date time time" ". repeat repeat repeat" ". details details details" ". next next next"; }
+    .note label.show { grid-area: show; } .note .title { grid-area: title; } .note .row-actions { grid-area: del; }
+    .note .date { grid-area: date; } .note .time { grid-area: time; } .note select.repeat { grid-area: repeat; }
+    .note .details { grid-area: details; } .note .next { grid-area: next; margin-top: 0; }
     .note.head { display: none; }
-    .row-actions { grid-column: 2 / -1; }
   }
-  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .empty { color: var(--muted); padding: 14px 0; border-top: 1px solid var(--line); }
-  .page { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
-  .page:first-of-type { border-top: 0; }
-  .page label { flex: 1; display: flex; gap: 8px; align-items: center; }
-  .field { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
-  .tv-url { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: var(--chip);
-            padding: 6px 8px; border-radius: 6px; word-break: break-all; }
-  aside { display: grid; gap: 24px; align-content: start; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
   .tv-section { grid-column: 1 / -1; }
-  .tv-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
-  .tv-bar label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
-  .tv-frame { background: #000; border-radius: 10px; padding: 10px; }
+  /* Card title rows: heading on the left, small actions on the right */
+  .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; min-height: 32px; }
+  .card-head h2 { margin: 0; flex: 1; }
+  .sub { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+  .sub:empty { display: none; }
+  .sub b { color: var(--warm); font-weight: 600; }
+  button.link { background: none; border-color: transparent; color: var(--muted); padding: 4px 6px; font-size: 13px; }
+  button.link:hover:not(:disabled) { color: var(--text); border-color: transparent; text-decoration: underline; }
+  button.primary-soft { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: transparent; color: var(--accent); font-weight: 600; }
+  button.toggle { font-size: 13px; padding: 4px 12px; border-radius: 999px; }
+  button.toggle[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .tv-section .card-head button.icon { font-size: 16px; width: 32px; height: 30px; padding: 0; border-radius: 999px; }
+  /* Display: groups in a grid, chips for lists */
+  .groups { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 40px; }
+  @media (max-width: 700px) { .groups { grid-template-columns: 1fr; } }
+  .group h3 { margin: 0 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 12px; font-size: 13px;
+          background: transparent; border: 1px solid var(--line); color: var(--muted); }
+  .chip.on { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--text); }
+  .chip .n { font-size: 11px; font-weight: 700; min-width: 16px; height: 16px; line-height: 16px; border-radius: 8px;
+             background: var(--accent); color: var(--accent-ink); text-align: center; }
+  .chip.gone { opacity: .6; text-decoration: line-through; }
+  .inline { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .inline label { color: var(--muted); font-size: 13px; }
+  .inline input[type=text] { flex: 1; min-width: 140px; width: auto; }
+  .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; min-height: 34px; max-width: 360px; }
+  .times { max-width: 360px; }
+  input.switch { appearance: none; -webkit-appearance: none; width: 40px; height: 24px; border-radius: 12px; margin: 0; flex: none;
+                 background: var(--line); position: relative; cursor: pointer; transition: background .15s; }
+  input.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+                        background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  input.switch:checked { background: var(--accent); }
+  input.switch:checked::after { transform: translateX(16px); }
+  .times { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 13px; }
+  .times input { flex: 1; }
+  /* Account: collapsed by default */
+  details.account { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 20px; }
+  details.account summary { cursor: pointer; font-weight: 600; font-size: 15px; list-style-position: inside; }
+  details.account summary span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  details.account[open] summary { margin-bottom: 14px; }
+  details.account #signout { margin-top: 14px; }
+  .tv-frame { background: #000; border-radius: 12px; padding: 8px; }
   /* Flash message */
   .msg-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: 8px; }
   #msgState:empty { display: none; }
@@ -105,6 +137,7 @@
     .msg-row { grid-template-columns: 1fr auto; }
     .msg-row input { grid-column: 1 / -1; }
     #tvDirty { display: none; }   /* the bottom bar already says so */
+    .groups { gap: 18px; }
   }
   .tv-viewport { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 3px; }
   .tv { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0;
@@ -117,8 +150,6 @@
   .tv .chip { position: absolute; border-radius: 16px; background: rgba(255,255,255,.1);
               border: 1.5px solid rgba(255,255,255,.13); box-sizing: border-box; }
   .tv img.icon { position: absolute; object-fit: contain; }
-  .tv-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
-  .muted-note { color: var(--muted); font-size: 12px; margin-left: 4px; }
   @keyframes tvfade { 0% { opacity: 1; } 40% { opacity: 0; } 100% { opacity: 1; } }
   #signin { max-width: 560px; margin: 48px auto; }
   #signin ol { padding-left: 20px; color: var(--muted); font-size: 14px; }
@@ -137,7 +168,6 @@
     button { min-height: 44px; padding: 8px 14px; border-radius: 9px; }
     button.icon { min-width: 44px; padding: 8px; font-size: 17px; }
     input[type=checkbox] { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); flex: none; }
-    .page { padding: 4px 0; } .page label { min-height: 44px; gap: 12px; }
     /* iOS renders date/time fields centred and shrinks them; keep them left aligned and full width */
     input[type=date], input[type=time] { -webkit-appearance: none; appearance: none; display: block; }
     input::-webkit-date-and-time-value { text-align: left; }
@@ -148,18 +178,17 @@
              padding-left: calc(16px + env(safe-area-inset-left)); padding-right: calc(16px + env(safe-area-inset-right)); }
     header h1 { font-size: 17px; }
     main { padding: 12px; gap: 14px; }
-    aside { gap: 14px; }
     section { padding: 16px 14px; border-radius: 14px; }
     h2 { font-size: 17px; } .hint { font-size: 14px; } h3 { font-size: 12.5px; }
     .status:not(:empty) { background: none; padding: 0; }
     /* each note becomes its own small card */
-    .note { grid-template-columns: 30px 1fr 1fr; gap: 8px; padding: 12px 10px; margin-top: 10px;
+    .note { gap: 8px; padding: 12px 10px; margin-top: 10px;
             border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
     .note label.show { min-height: 44px; align-self: start; }
-    .row-actions { gap: 8px; }
-    .row-actions .del { margin-left: auto; }
-    .toolbar { gap: 10px; } .toolbar button { flex: 1 1 auto; }
-    .field { flex-wrap: wrap; } .field select { flex: 1; min-width: 0; }
+    .chip { padding: 9px 14px; font-size: 15px; min-height: 40px; }
+    button.toggle, button.link, button.primary-soft { min-height: 36px; }
+    .tv-section .card-head button.icon { width: 40px; height: 36px; min-height: 0; min-width: 0; }
+    details.account { padding: 16px 14px; border-radius: 14px; }
     .loc label { font-size: 13px; }
     #signin { margin: 16px 12px; padding: 18px 16px; }
     #signin button, #signout { width: 100%; }
@@ -201,92 +230,85 @@
 
 <main id="app" hidden>
   <section class="tv-section">
-    <div class="tv-bar">
-      <h2 style="margin:0 8px 0 0; flex:1">TV preview</h2>
-      <span id="tvDirty" class="status dirty" hidden>Showing unsaved changes</span>
-      <button id="tvRefresh" title="Re-fetch weather and news">Refresh data</button>
+    <div class="card-head">
+      <h2>Preview</h2>
+      <span id="tvDirty" class="status dirty" hidden>Unsaved changes shown</span>
+      <button id="nightPreview" class="toggle" aria-pressed="false" title="Show night mode in the preview (not saved)">Night</button>
+      <button id="tvRefresh" class="icon" title="Refresh weather and news" aria-label="Refresh weather and news">↻</button>
     </div>
-    <div class="tv-frame"><div class="tv-viewport" id="tvViewport"><div class="tv" id="tv"></div></div></div>
-    <p class="tv-note" id="tvNote">A true-to-scale 1920×1080 replica of the screensaver, using your unsaved edits, live weather and your news digest. The TV uses Roku's own font, so text widths can differ slightly.</p>
+    <div class="tv-frame" title="A 1920×1080 replica of the TV with your unsaved changes. The TV uses Roku's font, so text widths can differ slightly.">
+      <div class="tv-viewport" id="tvViewport"><div class="tv" id="tv"></div></div></div>
   </section>
 
   <section id="msgSection">
-    <h2>Flash message</h2>
-    <p class="hint">Shows big across the board, over everything, for as long as you choose. Check it in the preview, then Save.</p>
+    <div class="card-head"><h2>Message</h2></div>
     <div class="msg-row">
-      <input id="msgText" type="text" maxlength="160" placeholder="Dinner's ready!" autocomplete="off" aria-label="Message">
+      <input id="msgText" type="text" maxlength="160" placeholder="Flash a message, e.g. Dinner's ready!" autocomplete="off" aria-label="Message">
       <select id="msgFor" aria-label="Show for">
         <option value="5">5 min</option><option value="15" selected>15 min</option><option value="30">30 min</option>
         <option value="60">1 hour</option><option value="120">2 hours</option><option value="midnight">Until midnight</option>
       </select>
-      <button id="msgClear" disabled>Clear</button>
+      <button id="msgClear" hidden>Clear</button>
     </div>
-    <p class="hint after" id="msgState"></p>
+    <p class="sub" id="msgState"></p>
   </section>
 
   <section>
-    <h2>Events</h2>
-    <p class="hint">Shown under "Coming up" until the day ends, or set them to repeat. Untick to hide without deleting.</p>
+    <div class="card-head">
+      <h2>Events</h2>
+      <button id="clearPast" class="link" hidden></button>
+      <button id="addEvent" class="primary-soft">+ Add</button>
+    </div>
     <div class="note head"><span></span><span>Title</span><span>Date</span><span>Time</span><span>Repeat</span><span>Details</span><span></span></div>
     <div id="notes"></div>
-    <div class="toolbar">
-      <button id="addEvent">+ Event</button>
-      <button id="clearPast">Remove past events</button>
-    </div>
   </section>
 
-  <aside>
-    <section>
-      <h2>Display</h2>
-      <h3>Sky</h3>
-      <select id="sky" class="full" aria-label="Sky">
-        <option value="auto">Automatic (follow the weather)</option>
-        <option value="night">Night</option><option value="dawn">Dawn</option><option value="day">Day</option>
-        <option value="dusk">Dusk</option><option value="cloudy">Cloudy</option><option value="rain">Rain</option>
-        <option value="snow">Snow</option><option value="storm">Storm</option><option value="fog">Fog</option>
-      </select>
-      <p class="hint after">Pick a scene to try it out (it shows on the TV too), then set it back to Automatic.</p>
-      <h3>Night mode</h3>
-      <div class="page"><label><input id="nightOn" type="checkbox"> Switch to a dim clock at night</label></div>
-      <div class="loc" style="margin-top:6px">
-        <label>From<input id="nightStart" type="time"></label>
-        <label>To<input id="nightEnd" type="time"></label>
+  <section>
+    <div class="card-head"><h2>Display</h2></div>
+    <div class="groups">
+      <div class="group">
+        <h3>Sky</h3>
+        <select id="sky" class="full" aria-label="Sky">
+          <option value="auto">Automatic</option>
+          <option value="night">Night</option><option value="dawn">Dawn</option><option value="day">Day</option>
+          <option value="dusk">Dusk</option><option value="cloudy">Cloudy</option><option value="rain">Rain</option>
+          <option value="snow">Snow</option><option value="storm">Storm</option><option value="fog">Fog</option>
+        </select>
       </div>
-      <p class="hint after">Hides the board and dims the sky. The clock moves every few minutes to protect the screen. Messages still show.</p>
-      <div class="page" style="border-top:0"><label><input id="nightPreview" type="checkbox"> Show night mode in the preview</label></div>
-      <h3>News banner</h3>
-      <p class="hint">Headlines from your news digest crawl along the bottom, one section per pass. Tick the sections to show and order them with the arrows.</p>
-      <div id="banner"></div>
-      <div class="field"><label for="speed">Scroll speed</label>
-        <select id="speed"><option value="slow">Slow</option><option value="normal">Normal</option><option value="fast">Fast</option></select></div>
-    </section>
-
-    <section>
-      <h2>Spotlight</h2>
-      <p class="hint">Fills the free space under "Coming up", rotating between these modules.</p>
-      <div id="spotMods"></div>
-      <div class="field"><label for="spotSecs">Seconds per module</label>
-        <select id="spotSecs"><option value="20">20</option><option value="30">30</option><option value="45">45</option><option value="60">60</option><option value="90">90</option><option value="120">120</option></select></div>
-      <h3><label for="tickers">Extra tickers</label></h3>
-      <input id="tickers" type="text" placeholder="NVDA, AAPL, BTC-USD" autocapitalize="characters" autocomplete="off" spellcheck="false">
-      <p class="hint after">Shown after the S&amp;P 500, Dow and Nasdaq. Up to 6 Yahoo Finance symbols (crypto like BTC-USD).</p>
-    </section>
-
-    <section>
-      <h2>Connection</h2>
-      <p class="hint">Save commits to this private repo. The TV reads it from there within about 30 seconds.</p>
-      <div class="tv-url" id="pubRepo"></div>
-      <p class="hint after" id="pubWhen"></p>
-      <h3>Preview location</h3>
-      <div class="loc">
-        <label class="wide">Name<input id="locName" type="text" placeholder="Home"></label>
-        <label>Latitude<input id="locLat" type="text" inputmode="decimal" placeholder="34.03"></label>
-        <label>Longitude<input id="locLon" type="text" inputmode="decimal" placeholder="-83.98"></label>
+      <div class="group">
+        <h3>Night mode</h3>
+        <label class="switch-row"><span>Dim clock at night</span><input id="nightOn" type="checkbox" class="switch"></label>
+        <div class="times" id="nightTimes">
+          <input id="nightStart" type="time" aria-label="From"><span>to</span><input id="nightEnd" type="time" aria-label="To">
+        </div>
       </div>
-      <p class="hint after">Only for the preview's weather. The TV uses its own config.</p>
-      <button id="signout">Sign out on this device</button>
-    </section>
-  </aside>
+      <div class="group">
+        <h3>News</h3>
+        <div class="chips" id="banner"></div>
+        <div class="inline"><label for="speed">Speed</label>
+          <select id="speed"><option value="slow">Slow</option><option value="normal">Normal</option><option value="fast">Fast</option></select></div>
+      </div>
+      <div class="group">
+        <h3>Spotlight</h3>
+        <div class="chips" id="spotMods"></div>
+        <div class="inline"><label for="spotSecs">Every</label>
+          <select id="spotSecs"><option value="20">20 s</option><option value="30">30 s</option><option value="45">45 s</option><option value="60">1 min</option><option value="90">90 s</option><option value="120">2 min</option></select>
+          <input id="tickers" type="text" placeholder="Extra tickers: NVDA, BTC-USD" aria-label="Extra tickers" title="Shown after the S&amp;P 500, Dow and Nasdaq. Up to 6 Yahoo Finance symbols." autocapitalize="characters" autocomplete="off" spellcheck="false"></div>
+      </div>
+    </div>
+    <p class="sub">Chips show in the order you tap them.</p>
+  </section>
+
+  <details class="account">
+    <summary>Account <span id="pubWhen"></span></summary>
+    <div class="loc">
+      <label class="wide">Preview location<input id="locName" type="text" placeholder="Home"></label>
+      <label>Latitude<input id="locLat" type="text" inputmode="decimal" placeholder="34.03"></label>
+      <label>Longitude<input id="locLon" type="text" inputmode="decimal" placeholder="-83.98"></label>
+    </div>
+    <p class="sub">Used only for the preview's weather. Saves go to <span id="pubRepo"></span>.</p>
+    <button id="signout">Sign out on this device</button>
+  </details>
 </main>
 
 <script>
@@ -411,7 +433,7 @@ function renderMessage(force = false) {
   if (m && !m.pending && !activeMessage()) state.message = null;   // expired while the page was open
   if (force || document.activeElement !== $("msgText")) $("msgText").value = state.message ? state.message.text : "";
   if (state.message && state.message.pending) $("msgFor").value = state.message.minutes;
-  $("msgClear").disabled = !state.message;
+  $("msgClear").hidden = !state.message;
   if (!state.message) box.replaceChildren();
   else if (state.message.pending) box.replaceChildren(el("b", { textContent: "Not on the TV yet. " }), `Save to show it ${forText(state.message.minutes)}.`);
   else box.replaceChildren(el("b", { textContent: "On the TV" }), state.message.until ? ` until ${clockText(state.message.until)}.` : ".");
@@ -436,6 +458,7 @@ function nightActive() {
 function renderNightSettings() {
   const n = state.settings.night;
   $("nightOn").checked = n.enabled; $("nightStart").value = n.start; $("nightEnd").value = n.end;
+  $("nightTimes").hidden = !n.enabled;
 }
 
 function setStatus(text, cls = "") { const s = $("status"); s.textContent = text; s.className = "status " + cls; }
@@ -445,7 +468,7 @@ function setDirty(on) {
 function markDirty() { setDirty(true); setStatus("Unsaved changes", "dirty"); renderTv(); }
 function renderAll() {
   $("locName").value = state.location.name; $("locLat").value = state.location.latitude; $("locLon").value = state.location.longitude;
-  renderNotes(); renderBanner(); renderSpotlightSettings(); renderNightSettings(); renderMessage(true); renderTv();
+  sortEvents(); renderNotes(); renderBanner(); renderSpotlightSettings(); renderNightSettings(); renderMessage(true); renderTv();
 }
 // Cancel: back to the board as it was last loaded or saved
 function cancelChanges() {
@@ -457,31 +480,36 @@ function cancelChanges() {
 
 function renderNotes() {
   const box = $("notes"); box.replaceChildren();
-  if (!state.notes.length) { box.append(el("div", { className: "empty", textContent: "No events yet. Add one below." })); }
+  if (!state.notes.length) { box.append(el("div", { className: "empty", textContent: "No events yet." })); }
   state.notes.forEach((n, i) => {
     const row = el("div", { className: rowClass(n) });
     const next = el("div", { className: "next" });
     const showNext = () => { const k = n.repeat && n.date ? eventDate(n) : ""; next.textContent = k && k !== n.date ? `Next: ${prettyDate(k)}` : ""; next.hidden = !next.textContent; };
     const bind = (input, key) => { input.addEventListener("input", () => {
       n[key] = input.type === "checkbox" ? input.checked : input.value;
-      row.className = rowClass(n); showNext(); markDirty(); }); return input; };
+      row.className = rowClass(n); showNext(); updatePast(); markDirty(); }); return input; };
     const show = bind(el("input", { type: "checkbox", checked: n.show, title: "Show on TV" }), "show");
     const title = bind(el("input", { type: "text", value: n.title, placeholder: "Title", className: "title" }), "title");
-    const date = bind(el("input", { type: "date", value: n.date, required: true }), "date");
+    const date = bind(el("input", { type: "date", value: n.date, required: true, className: "date" }), "date");
     date.addEventListener("change", () => { if (!date.value) { date.value = n.date = n.date || todayKey(); } });
-    const time = bind(el("input", { type: "time", value: n.time }), "time");
+    const time = bind(el("input", { type: "time", value: n.time, className: "time" }), "time");
     const repeat = bind(el("select", { className: "repeat", title: "Repeat" }, ...Object.entries(REPEATS).map(([v, label]) => el("option", { value: v, textContent: label }))), "repeat");
     repeat.value = n.repeat || "";
     const details = bind(el("input", { type: "text", value: n.details, placeholder: "Details (optional)", className: "details" }), "details");
-    const move = (d) => { const j = i + d; [state.notes[i], state.notes[j]] = [state.notes[j], state.notes[i]]; renderNotes(); markDirty(); };
-    const up = el("button", { className: "icon", textContent: "↑", title: "Move up", disabled: i === 0, onclick: () => move(-1) });
-    const down = el("button", { className: "icon", textContent: "↓", title: "Move down", disabled: i === state.notes.length - 1, onclick: () => move(1) });
     const del = el("button", { className: "icon del", textContent: "✕", title: "Delete", onclick: () => { state.notes.splice(i, 1); renderNotes(); markDirty(); } });
-    row.append(el("label", { className: "show", title: "Show on TV" }, show), title, date, time, repeat, details, el("div", { className: "row-actions" }, up, down, del), next);
+    row.append(el("label", { className: "show", title: "Show on TV" }, show), title, date, time, repeat, details, el("div", { className: "row-actions" }, del), next);
     showNext();
     box.append(row);
   });
+  updatePast();
 }
+
+// "Remove 2 past" only when there are any
+function updatePast() {
+  const past = state.notes.filter(isPast).length, b = $("clearPast");
+  b.hidden = !past; b.textContent = `Remove ${past} past`;
+}
+const sortEvents = () => state.notes.sort((a, b) => (eventDate(a) + " " + (a.time || "")).localeCompare(eventDate(b) + " " + (b.time || "")));
 
 function addEvent() {
   state.notes.push({ show: true, title: "", date: todayKey(), time: "", details: "", repeat: "" });
@@ -489,46 +517,37 @@ function addEvent() {
   const inputs = $("notes").querySelectorAll("input.title"); inputs[inputs.length - 1].focus();
 }
 
+// Tap-to-toggle chips; selected ones show their position (the order the TV uses).
+function renderChips(box, keys, enabled, name, onChange, opts = {}) {
+  box.replaceChildren();
+  for (const key of keys) {
+    const pos = enabled.indexOf(key), on = pos >= 0;
+    const chip = el("button", { className: "chip" + (on ? " on" : "") + (opts.gone && opts.gone(key) ? " gone" : ""),
+      title: opts.gone && opts.gone(key) ? "Not in today's digest" : "", onclick: () => {
+        const next = on ? enabled.filter((k) => k !== key) : [...enabled, key];
+        if (!next.length && opts.keepOne) return;
+        onChange(next); markDirty();
+      } });
+    chip.setAttribute("aria-pressed", String(on));
+    if (on) chip.append(el("span", { className: "n", textContent: String(pos + 1) }));
+    chip.append(name(key));
+    box.append(chip);
+  }
+}
+
 function renderSpotlightSettings() {
-  const box = $("spotMods"); box.replaceChildren();
-  const enabled = state.settings.spotlight.modules;
-  const order = [...enabled, ...ALL_SPOT.filter((k) => !enabled.includes(k))];
-  order.forEach((key, i) => {
-    const on = enabled.includes(key);
-    const cb = el("input", { type: "checkbox", checked: on });
-    cb.addEventListener("change", () => {
-      state.settings.spotlight.modules = order.filter((k) => (k === key ? cb.checked : enabled.includes(k)));
-      renderSpotlightSettings(); markDirty();
-    });
-    const move = (d) => { const o = [...order]; [o[i], o[i + d]] = [o[i + d], o[i]]; state.settings.spotlight.modules = o.filter((k) => enabled.includes(k)); renderSpotlightSettings(); markDirty(); };
-    box.append(el("div", { className: "page" },
-      el("label", {}, cb, SPOT_NAMES[key]),
-      el("button", { className: "icon", textContent: "↑", disabled: i === 0 || !on, onclick: () => move(-1) }),
-      el("button", { className: "icon", textContent: "↓", disabled: i === order.length - 1 || !on || !enabled.includes(order[i + 1]), onclick: () => move(1) })));
-  });
+  renderChips($("spotMods"), ALL_SPOT, state.settings.spotlight.modules, (k) => SPOT_NAMES[k],
+    (next) => { state.settings.spotlight.modules = next; renderSpotlightSettings(); });
   $("tickers").value = state.settings.spotlight.tickers.join(", ");
   $("spotSecs").value = String(state.settings.spotlight.seconds);
 }
 
 function renderBanner() {
-  const box = $("banner"); box.replaceChildren();
-  const enabled = state.settings.ticker.sections;
-  const order = [...enabled, ...Object.keys(SECTION_NAMES).filter((k) => !enabled.includes(k))];
-  const n = news();
-  order.forEach((key, i) => {
-    const on = enabled.includes(key);
-    const cb = el("input", { type: "checkbox", checked: on });
-    cb.addEventListener("change", () => {
-      const next = order.filter((k) => (k === key ? cb.checked : enabled.includes(k)));
-      if (!next.length) { cb.checked = true; return; }
-      state.settings.ticker.sections = next; renderBanner(); markDirty();
-    });
-    const move = (d) => { const o = [...order]; [o[i], o[i + d]] = [o[i + d], o[i]]; state.settings.ticker.sections = o.filter((k) => enabled.includes(k)); renderBanner(); markDirty(); };
-    box.append(el("div", { className: "page" },
-      el("label", {}, cb, sectionName(key), n && !(n[key] || []).length ? el("span", { className: "muted-note", textContent: "not in today's digest" }) : ""),
-      el("button", { className: "icon", textContent: "↑", disabled: i === 0 || !on, onclick: () => move(-1) }),
-      el("button", { className: "icon", textContent: "↓", disabled: i === order.length - 1 || !on || !enabled.includes(order[i + 1]), onclick: () => move(1) })));
-  });
+  const n = news(), enabled = state.settings.ticker.sections;
+  const keys = [...Object.keys(SECTION_NAMES), ...enabled.filter((k) => !(k in SECTION_NAMES))];
+  renderChips($("banner"), keys, enabled, sectionName,
+    (next) => { state.settings.ticker.sections = next; renderBanner(); },
+    { keepOne: true, gone: (k) => !!n && !(n[k] || []).length });
   $("speed").value = state.settings.ticker.speed;
   $("sky").value = state.settings.sky;
 }
@@ -1267,8 +1286,8 @@ async function load() {
   else { setStatus("GitHub error " + res.status, "err"); return; }
   savedBoard = board; state = cleanBoard(board);
   $("signin").hidden = true; $("app").hidden = false; $("save").hidden = false; $("cancel").hidden = false; setDirty(false); document.body.classList.add("signed-in");
-  $("pubRepo").textContent = `github.com/${CONFIG.repo}/${CONFIG.path}`;
-  $("pubWhen").textContent = board.updated ? "Last saved " + new Date(board.updated).toLocaleString() : "";
+  $("pubRepo").textContent = `${CONFIG.repo}/${CONFIG.path}`;
+  $("pubWhen").textContent = board.updated ? "· last saved " + new Date(board.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
   fitTv(); renderAll();
   setStatus(board.updated ? "Up to date" : "");
   loadTvData();
@@ -1286,7 +1305,7 @@ async function save() {
   } catch (e) { setDirty(true); setStatus("Save failed: " + e.message, "err"); return; }
   if (res.status === 200 || res.status === 201) {
     sha = res.json.content.sha; savedBoard = board; state = cleanBoard(board); setDirty(false);
-    $("pubWhen").textContent = "Last saved " + new Date(board.updated).toLocaleString();
+    $("pubWhen").textContent = "· last saved " + new Date(board.updated).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
     renderAll();
     setStatus("Saved. The TV picks it up within about 30 seconds.", "ok");
     setTimeout(() => { if (!dirty) setStatus("Up to date"); }, 4000);
@@ -1304,7 +1323,7 @@ async function save() {
 $("save").onclick = save;
 $("cancel").onclick = cancelChanges;
 $("addEvent").onclick = addEvent;
-$("clearPast").onclick = () => { const before = state.notes.length; state.notes = state.notes.filter((n) => !isPast(n)); if (state.notes.length !== before) { renderNotes(); markDirty(); } };
+$("clearPast").onclick = () => { state.notes = state.notes.filter((n) => !isPast(n)); renderNotes(); markDirty(); };
 $("speed").addEventListener("change", () => { state.settings.ticker.speed = $("speed").value; markDirty(); });
 $("tickers").addEventListener("input", () => {
   state.settings.spotlight.tickers = $("tickers").value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean).slice(0, 6);
@@ -1318,10 +1337,10 @@ $("msgText").addEventListener("input", editMessage);
 $("msgText").addEventListener("blur", () => renderMessage());
 $("msgFor").addEventListener("change", () => { if (state.message) editMessage(); });
 $("msgClear").onclick = () => { $("msgText").value = ""; editMessage(); };
-$("nightOn").addEventListener("change", () => { state.settings.night.enabled = $("nightOn").checked; markDirty(); });
+$("nightOn").addEventListener("change", () => { state.settings.night.enabled = $("nightOn").checked; renderNightSettings(); markDirty(); });
 for (const [id, key] of [["nightStart", "start"], ["nightEnd", "end"]])
   $(id).addEventListener("change", () => { if (clockMin($(id).value) >= 0) { state.settings.night[key] = $(id).value; markDirty(); } else renderNightSettings(); });
-$("nightPreview").addEventListener("change", () => { tv.previewNight = $("nightPreview").checked; renderTv(); });
+$("nightPreview").onclick = () => { tv.previewNight = !tv.previewNight; $("nightPreview").setAttribute("aria-pressed", String(tv.previewNight)); renderTv(); };
 for (const [id, key] of [["locName", "name"], ["locLat", "latitude"], ["locLon", "longitude"]]) {
   $(id).addEventListener("input", () => { state.location[key] = $(id).value; markDirty(); });
   if (key !== "name") $(id).addEventListener("change", loadTvData);
