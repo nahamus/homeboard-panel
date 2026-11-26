@@ -29,6 +29,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line);
@@ -58,10 +59,8 @@
   .note.head { border-top: 0; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding-top: 0; }
   .note.hidden input[type=text] { opacity: .5; }
   .note.past input { text-decoration: line-through; opacity: .55; }
-  .cd { display: grid; grid-template-columns: minmax(0, 2fr) 160px auto auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
-  .cd label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
-  @media (max-width: 600px) { .cd { grid-template-columns: 1fr 1fr; } .cd .title { grid-column: 1 / -1; } }
   .row-actions { display: flex; gap: 4px; }
+  .note label.show { display: flex; align-items: center; justify-content: center; align-self: stretch; cursor: pointer; }
   @media (max-width: 700px) {
     .note { grid-template-columns: 22px 1fr 1fr; }
     .note .title, .note .details { grid-column: 2 / -1; }
@@ -106,7 +105,50 @@
   .loc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
   .loc label { font-size: 12px; color: var(--muted); display: grid; gap: 3px; }
   .loc label.wide { grid-column: 1 / -1; }
-  @media (max-width: 600px) { header { padding: 10px 16px; } header h1 { font-size: 16px; } .status { display: none; } .status.show { display: block; position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 16px; } }
+  /* ---- Phones and touch screens (the TV preview's own styles are untouched) ---- */
+  button, input, select, label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  @media (max-width: 700px), (pointer: coarse) {
+    /* 16px text stops iOS zooming in on focus; 44px is the minimum comfortable tap size */
+    input[type=text], input[type=date], input[type=time], input[type=number], input[type=password], select {
+      font-size: 16px; min-height: 44px; padding: 8px 10px; border-radius: 8px; }
+    button { min-height: 44px; padding: 8px 14px; border-radius: 9px; }
+    button.icon { min-width: 44px; padding: 8px; font-size: 17px; }
+    input[type=checkbox] { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); flex: none; }
+    .page { padding: 4px 0; } .page label { min-height: 44px; gap: 12px; }
+    /* iOS renders date/time fields centred and shrinks them; keep them left aligned and full width */
+    input[type=date], input[type=time] { -webkit-appearance: none; appearance: none; display: block; }
+    input::-webkit-date-and-time-value { text-align: left; }
+  }
+  @media (max-width: 700px) {
+    body { font-size: 16px; }
+    header { padding: 10px 16px; padding-top: calc(10px + env(safe-area-inset-top));
+             padding-left: calc(16px + env(safe-area-inset-left)); padding-right: calc(16px + env(safe-area-inset-right)); }
+    header h1 { font-size: 17px; }
+    main { padding: 12px; gap: 14px; }
+    aside { gap: 14px; }
+    section { padding: 16px 14px; border-radius: 14px; }
+    h2 { font-size: 17px; } .hint { font-size: 14px; }
+    /* each note becomes its own small card */
+    .note { grid-template-columns: 30px 1fr 1fr; gap: 8px; padding: 12px 10px; margin-top: 10px;
+            border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+    .note label.show { min-height: 44px; align-self: start; }
+    .row-actions { gap: 8px; }
+    .row-actions .del { margin-left: auto; }
+    .toolbar { gap: 10px; } .toolbar button { flex: 1 1 auto; }
+    .field { flex-wrap: wrap; } .field select { flex: 1; min-width: 0; }
+    .field.stack { display: grid; gap: 6px; } .field.stack input { width: 100%; }
+    .loc label { font-size: 13px; }
+    #signin { margin: 16px 12px; padding: 18px 16px; }
+    #signin button { width: 100%; }
+    /* Save + status live in a bar at the bottom, in thumb reach */
+    body.signed-in { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+    body.signed-in #status { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; align-items: center;
+      min-height: calc(68px + env(safe-area-inset-bottom)); padding: 10px 136px calc(10px + env(safe-area-inset-bottom)) 16px;
+      background: var(--panel); border-top: 1px solid var(--line); font-size: 14px; box-shadow: 0 -4px 16px rgba(0,0,0,.12); }
+    body.signed-in #status:empty::before { content: "No changes"; }
+    body.signed-in #save { position: fixed; right: 16px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 7;
+      min-width: 108px; min-height: 44px; font-size: 16px; }
+  }
 </style>
 </head>
 <body>
@@ -153,13 +195,6 @@
     </div>
   </section>
 
-  <section>
-    <h2>Countdowns</h2>
-    <p class="hint">Birthdays, trips, school breaks. Shown in the Spotlight next to US holidays (added automatically). Tick <b>Yearly</b> for birthdays and anniversaries.</p>
-    <div id="countdowns"></div>
-    <div class="toolbar"><button id="addCountdown">+ Countdown</button></div>
-  </section>
-
   <aside>
     <section>
       <h2>Display</h2>
@@ -183,7 +218,7 @@
       <div id="spotMods"></div>
       <div class="field"><label for="spotSecs">Seconds per module</label>
         <select id="spotSecs"><option value="20">20</option><option value="30">30</option><option value="45">45</option><option value="60">60</option><option value="90">90</option><option value="120">120</option></select></div>
-      <div class="field"><label for="tickers">Extra tickers</label><input id="tickers" type="text" placeholder="NVDA, AAPL, BTC-USD" style="width:100%"></div>
+      <div class="field stack"><label for="tickers">Extra tickers</label><input id="tickers" type="text" placeholder="NVDA, AAPL, BTC-USD" style="width:100%"></div>
       <p class="hint" style="margin:6px 0 0">Shown after the S&amp;P 500, Dow and Nasdaq. Up to 6, Yahoo Finance symbols (crypto like BTC-USD).</p>
     </section>
 
@@ -281,8 +316,8 @@ function renderNotes() {
     const move = (d) => { const j = i + d; [state.notes[i], state.notes[j]] = [state.notes[j], state.notes[i]]; renderNotes(); markDirty(); };
     const up = el("button", { className: "icon", textContent: "↑", title: "Move up", disabled: i === 0, onclick: () => move(-1) });
     const down = el("button", { className: "icon", textContent: "↓", title: "Move down", disabled: i === state.notes.length - 1, onclick: () => move(1) });
-    const del = el("button", { className: "icon", textContent: "✕", title: "Delete", onclick: () => { state.notes.splice(i, 1); renderNotes(); markDirty(); } });
-    row.append(show, title, date, time, details, el("div", { className: "row-actions" }, up, down, del));
+    const del = el("button", { className: "icon del", textContent: "✕", title: "Delete", onclick: () => { state.notes.splice(i, 1); renderNotes(); markDirty(); } });
+    row.append(el("label", { className: "show", title: "Show on TV" }, show), title, date, time, details, el("div", { className: "row-actions" }, up, down, del));
     box.append(row);
   });
 }
@@ -291,19 +326,6 @@ function addNote(withDate) {
   state.notes.push({ show: true, title: "", date: withDate ? todayKey() : "", time: "", details: "" });
   renderNotes(); markDirty();
   const inputs = $("notes").querySelectorAll("input.title"); inputs[inputs.length - 1].focus();
-}
-
-function renderCountdowns() {
-  const box = $("countdowns"); box.replaceChildren();
-  if (!state.countdowns.length) box.append(el("div", { className: "empty", textContent: "No countdowns yet. Holidays are added automatically." }));
-  state.countdowns.forEach((c, i) => {
-    const bind = (input, key) => { input.addEventListener("input", () => { c[key] = input.type === "checkbox" ? input.checked : input.value; markDirty(); }); return input; };
-    box.append(el("div", { className: "cd" },
-      bind(el("input", { type: "text", value: c.title, placeholder: "e.g. Noah's birthday", className: "title" }), "title"),
-      bind(el("input", { type: "date", value: c.date }), "date"),
-      el("label", {}, bind(el("input", { type: "checkbox", checked: c.yearly }), "yearly"), "Yearly"),
-      el("button", { className: "icon", textContent: "✕", title: "Delete", onclick: () => { state.countdowns.splice(i, 1); renderCountdowns(); markDirty(); } })));
-  });
 }
 
 function renderSpotlightSettings() {
@@ -901,7 +923,7 @@ async function loadTvData() {
 window.addEventListener("resize", fitTv);
 
 function showSignin(message = "") {
-  $("app").hidden = true; $("signin").hidden = false; $("save").hidden = true;
+  $("app").hidden = true; $("signin").hidden = false; $("save").hidden = true; document.body.classList.remove("signed-in");
   $("repoName").textContent = CONFIG.repo; $("signinMsg").textContent = message;
   setStatus("");
 }
@@ -924,11 +946,11 @@ async function load() {
   else { setStatus("GitHub error " + res.status, "err"); return; }
   state = cleanBoard(board);
   dirty = false;
-  $("signin").hidden = true; $("app").hidden = false; $("save").hidden = false; $("save").disabled = true;
+  $("signin").hidden = true; $("app").hidden = false; $("save").hidden = false; $("save").disabled = true; document.body.classList.add("signed-in");
   $("pubRepo").textContent = `github.com/${CONFIG.repo}/${CONFIG.path}`;
   $("pubWhen").textContent = board.updated ? "Last saved " + new Date(board.updated).toLocaleString() : "";
   $("locName").value = state.location.name; $("locLat").value = state.location.latitude; $("locLon").value = state.location.longitude;
-  fitTv(); renderNotes(); renderBanner(); renderCountdowns(); renderSpotlightSettings(); renderTv();
+  fitTv(); renderNotes(); renderBanner(); renderSpotlightSettings(); renderTv();
   setStatus(board.updated ? "Up to date" : "");
   loadTvData();
   loadOnThisDay();
@@ -946,7 +968,7 @@ async function save() {
   if (res.status === 200 || res.status === 201) {
     sha = res.json.content.sha; state = cleanBoard(board); dirty = false;
     $("pubWhen").textContent = "Last saved " + new Date(board.updated).toLocaleString();
-    renderNotes(); renderBanner(); renderCountdowns(); renderSpotlightSettings(); renderTv();
+    renderNotes(); renderBanner(); renderSpotlightSettings(); renderTv();
     setStatus("Saved. The TV picks it up within about 2 minutes.", "ok show");
     setTimeout(() => { if (!dirty) setStatus("Up to date"); }, 4000);
   } else if (res.status === 409 || res.status === 422) {
@@ -965,7 +987,6 @@ $("addNote").onclick = () => addNote(false);
 $("addEvent").onclick = () => addNote(true);
 $("clearPast").onclick = () => { const t = todayKey(); const before = state.notes.length; state.notes = state.notes.filter((n) => !n.date || n.date >= t); if (state.notes.length !== before) { renderNotes(); markDirty(); } };
 $("speed").addEventListener("change", () => { state.settings.ticker.speed = $("speed").value; markDirty(); });
-$("addCountdown").onclick = () => { state.countdowns.push({ title: "", date: todayKey(), yearly: false }); renderCountdowns(); markDirty(); const t = $("countdowns").querySelectorAll("input.title"); t[t.length - 1].focus(); };
 $("tickers").addEventListener("input", () => {
   state.settings.spotlight.tickers = $("tickers").value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean).slice(0, 6);
   markDirty();
