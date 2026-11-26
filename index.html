@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; manifest-src 'self'; worker-src 'self'; connect-src https://api.github.com https://api.open-meteo.com https://nahamus.github.io https://api.wikimedia.org https://query1.finance.yahoo.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; manifest-src 'self'; worker-src 'self'; connect-src https://api.github.com https://api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://nahamus.github.io https://api.wikimedia.org https://query1.finance.yahoo.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="robots" content="noindex">
 <title>HomeBoard Control</title>
 <!-- Installable app (PWA): Add to Home Screen on iOS/Android, Install on desktop Chrome/Edge -->
@@ -65,11 +65,14 @@
     border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; }
   input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   select { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
-  .note { display: grid; grid-template-columns: 22px minmax(0, 2fr) 160px 130px minmax(0, 1.5fr) auto;
+  .note { display: grid; grid-template-columns: 22px minmax(0, 2fr) 160px 130px 150px minmax(0, 1.5fr) auto;
           gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
   .note.head { border-top: 0; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding-top: 0; }
   .note.hidden input[type=text] { opacity: .5; }
   .note.past input { text-decoration: line-through; opacity: .55; }
+  .note.pinned select.repeat { visibility: hidden; }
+  .note .next { grid-column: 2 / -1; color: var(--muted); font-size: 12px; margin-top: -4px; }
+  select.repeat { width: 100%; min-width: 0; }
   .row-actions { display: flex; gap: 4px; }
   .note label.show { display: flex; align-items: center; justify-content: center; align-self: stretch; cursor: pointer; }
   @media (max-width: 700px) {
@@ -77,6 +80,8 @@
     .note .title, .note .details { grid-column: 2 / -1; }
     .note input[type=date] { grid-column: 2; }
     .note input[type=time] { grid-column: 3; }
+    .note select.repeat { grid-column: 2 / -1; }
+    .note.pinned select.repeat { display: none; }
     .note.head { display: none; }
     .row-actions { grid-column: 2 / -1; }
   }
@@ -195,8 +200,8 @@
 
   <section>
     <h2>Notes &amp; events</h2>
-    <p class="hint">No date: a pinned note at the top. With a date: an event, shown until its day ends. Untick to hide without deleting.</p>
-    <div class="note head"><span></span><span>Title</span><span>Date</span><span>Time</span><span>Details</span><span></span></div>
+    <p class="hint">No date: a pinned note at the top. With a date: an event, shown until its day ends, or set it to repeat. Untick to hide without deleting.</p>
+    <div class="note head"><span></span><span>Title</span><span>Date</span><span>Time</span><span>Repeat</span><span>Details</span><span></span></div>
     <div id="notes"></div>
     <div class="toolbar">
       <button id="addNote">+ Note</button>
@@ -263,6 +268,7 @@ const SPEEDS = { slow: 80, normal: 110, fast: 150 };   // px per second, same as
 const SKIES = ["auto", "night", "dawn", "day", "dusk", "cloudy", "rain", "snow", "storm", "fog"];
 const SPOT_NAMES = { markets: "Markets", onthisday: "On this day", countdowns: "Countdowns" };
 const ALL_SPOT = Object.keys(SPOT_NAMES);
+const REPEATS = { "": "Once", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", yearly: "Yearly" };
 let state = { notes: [], countdowns: [], location: { name: "Home", latitude: "", longitude: "" },
   settings: { ticker: { sections: [...ALL_SECTIONS], speed: "normal" }, sky: "auto", spotlight: { modules: [...ALL_SPOT], tickers: ["BTC-USD"], seconds: 45 } } };
 let dirty = false;
@@ -291,7 +297,8 @@ const fromB64 = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.repla
 function cleanBoard(b) {
   const t = (v, n) => String(v ?? "").trim().slice(0, n);
   const notes = (b.notes || []).filter((n) => n && t(n.title, 200)).map((n) => ({
-    show: n.show !== false, title: t(n.title, 200), date: t(n.date, 10), time: t(n.time, 8), details: t(n.details, 200) }));
+    show: n.show !== false, title: t(n.title, 200), date: t(n.date, 10), time: t(n.time, 8), details: t(n.details, 200),
+    repeat: REPEATS[n.repeat] && n.date ? n.repeat : "" }));
   const tk = (b.settings || {}).ticker || {};
   let sections = [...new Set((tk.sections || []).filter((k) => ALL_SECTIONS.includes(k)))];
   if (!sections.length) sections = [...ALL_SECTIONS];
@@ -311,32 +318,62 @@ const $ = (id) => document.getElementById(id);
 const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
 
+// Next occurrence (on or after today) of a repeating event. Mirrors hbNextOccurrence() in components/utils/Util.brs.
+function nextOccurrence(start, rpt, today = todayKey()) {
+  if (!rpt || !start || start >= today) return start;
+  const p2 = (v) => String(v).padStart(2, "0"), key = (y, m, d) => `${y}-${p2(m)}-${p2(d)}`;
+  const dim = (y, m) => new Date(y, m, 0).getDate();
+  const [sy, sm, sd] = start.split("-").map(Number), [ty, tm, td] = today.split("-").map(Number);
+  if (rpt === "weekly" || rpt === "biweekly") {
+    const per = rpt === "weekly" ? 7 : 14, s = Date.UTC(sy, sm - 1, sd) / 864e5, t = Date.UTC(ty, tm - 1, td) / 864e5;
+    const d = new Date((s + Math.ceil((t - s) / per) * per) * 864e5);
+    return key(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  }
+  if (rpt === "monthly") {
+    let y = ty, m = tm;
+    for (let i = 0; i < 2; i++) { const k = key(y, m, Math.min(sd, dim(y, m))); if (k >= today) return k; if (++m > 12) { m = 1; y++; } }
+  }
+  if (rpt === "yearly") for (const y of [ty, ty + 1]) { const k = key(y, sm, Math.min(sd, dim(y, sm))); if (k >= today) return k; }
+  return start;
+}
+const eventDate = (n) => nextOccurrence(n.date, n.repeat);
+const isPast = (n) => !!n.date && eventDate(n) < todayKey();
+const rowClass = (n) => "note" + (n.show ? "" : " hidden") + (n.date ? "" : " pinned") + (isPast(n) ? " past" : "");
+const prettyDate = (k) => new Date(k + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
 function setStatus(text, cls = "") { const s = $("status"); s.textContent = text; s.className = "status " + cls; }
 function markDirty() { dirty = true; $("save").disabled = false; setStatus("Unsaved changes", "dirty"); renderTv(); }
 
 function renderNotes() {
   const box = $("notes"); box.replaceChildren();
   if (!state.notes.length) { box.append(el("div", { className: "empty", textContent: "No notes yet. Add one below." })); }
-  const today = todayKey();
   state.notes.forEach((n, i) => {
-    const row = el("div", { className: "note" + (n.show ? "" : " hidden") + (n.date && n.date < today ? " past" : "") });
-    const bind = (input, key) => { input.addEventListener("input", () => { n[key] = input.type === "checkbox" ? input.checked : input.value; if (key === "show" || key === "date") row.className = "note" + (n.show ? "" : " hidden") + (n.date && n.date < todayKey() ? " past" : ""); markDirty(); }); return input; };
+    const row = el("div", { className: rowClass(n) });
+    const next = el("div", { className: "next" });
+    const showNext = () => { const k = n.repeat && n.date ? eventDate(n) : ""; next.textContent = k && k !== n.date ? `Next: ${prettyDate(k)}` : ""; next.hidden = !next.textContent; };
+    const bind = (input, key) => { input.addEventListener("input", () => {
+      n[key] = input.type === "checkbox" ? input.checked : input.value;
+      if (key === "date" && !n.date) { n.repeat = ""; repeat.value = ""; }
+      row.className = rowClass(n); showNext(); markDirty(); }); return input; };
     const show = bind(el("input", { type: "checkbox", checked: n.show, title: "Show on TV" }), "show");
     const title = bind(el("input", { type: "text", value: n.title, placeholder: "Title", className: "title" }), "title");
     const date = bind(el("input", { type: "date", value: n.date }), "date");
     const time = bind(el("input", { type: "time", value: n.time }), "time");
+    const repeat = bind(el("select", { className: "repeat", title: "Repeat" }, ...Object.entries(REPEATS).map(([v, label]) => el("option", { value: v, textContent: label }))), "repeat");
+    repeat.value = n.repeat || "";
     const details = bind(el("input", { type: "text", value: n.details, placeholder: "Details (optional)", className: "details" }), "details");
     const move = (d) => { const j = i + d; [state.notes[i], state.notes[j]] = [state.notes[j], state.notes[i]]; renderNotes(); markDirty(); };
     const up = el("button", { className: "icon", textContent: "↑", title: "Move up", disabled: i === 0, onclick: () => move(-1) });
     const down = el("button", { className: "icon", textContent: "↓", title: "Move down", disabled: i === state.notes.length - 1, onclick: () => move(1) });
     const del = el("button", { className: "icon del", textContent: "✕", title: "Delete", onclick: () => { state.notes.splice(i, 1); renderNotes(); markDirty(); } });
-    row.append(el("label", { className: "show", title: "Show on TV" }, show), title, date, time, details, el("div", { className: "row-actions" }, up, down, del));
+    row.append(el("label", { className: "show", title: "Show on TV" }, show), title, date, time, repeat, details, el("div", { className: "row-actions" }, up, down, del), next);
+    showNext();
     box.append(row);
   });
 }
 
 function addNote(withDate) {
-  state.notes.push({ show: true, title: "", date: withDate ? todayKey() : "", time: "", details: "" });
+  state.notes.push({ show: true, title: "", date: withDate ? todayKey() : "", time: "", details: "", repeat: "" });
   renderNotes(); markDirty();
   const inputs = $("notes").querySelectorAll("input.title"); inputs[inputs.length - 1].focus();
 }
@@ -423,7 +460,7 @@ function notesView() {
   const today = todayKey();
   const shown = state.notes.filter((n) => n.show && n.title.trim());
   const pinned = shown.filter((n) => !n.date);
-  const events = shown.filter((n) => n.date && n.date >= today)
+  const events = shown.filter((n) => n.date).map((n) => ({ ...n, date: eventDate(n) })).filter((n) => n.date >= today)
     .sort((a, b) => (a.date + " " + (a.time || "")).localeCompare(b.date + " " + (b.time || "")));
   return { pinned, events, total: pinned.length + events.length };
 }
@@ -637,10 +674,29 @@ function drawWeather(root) {
   const w = tv.data && tv.data.weather;
   Glass(root, 1264, 190, 600, 760);
   const p = G(root, 1264, 190);
-  L(p, state.location.name.toUpperCase(), 36, 28, 380, 40, 28, true, C.heading);
+  const alerts = activeAlerts();
+  if (alerts.length) {
+    // Alert strip replaces the location title (mirrors WeatherPanel.brs onAlerts)
+    const a = alerts[0], warn = a.warning;
+    const bg = R(p, 30, 24, 540, 48, warn ? "#FF5A4E" : "#FFC857"); bg.style.borderRadius = "24px";
+    const until = warn ? "" : untilText(a.ends);   // warnings show their end time in the crawl
+    L(p, a.event + (until ? DOT + until : "") + (alerts.length > 1 ? `  +${alerts.length - 1}` : ""), 50, 24, 500, 48, 24, true, warn ? C.white : C.ink);
+  } else L(p, state.location.name.toUpperCase(), 36, 28, 380, 40, 28, true, C.heading);
   if (!w || w.error) { L(p, "--" + DEG, 186, 80, 390, 140, 128, true, C.white); L(p, (w && w.error) || "Loading...", 36, 284, 528, 40, 28, false, C.secondary); return; }
   Icon(p, w.icon, 24, 76, 150);
   L(p, num(w.temp) + DEG, 186, 80, 390, 140, 128, true, C.white);
+  // AQI, pollen, UV rows (mirrors WeatherPanel.brs showReadings). Pollen comes from pollen.com,
+  // which browsers can't fetch, so the preview shows where it goes.
+  const readings = [];
+  if (typeof w.aqi === "number") readings.push(["AQI " + w.aqi, ...aqiLevel(w.aqi)]);
+  readings.push(["Pollen", "TV only", C.muted]);
+  if (w.isDay && typeof w.uvMax === "number") readings.push(["UV " + w.uvMax, ...uvLevel(w.uvMax)]);
+  readings.forEach(([name, level, color], i) => {
+    const row = G(p, 304, 86 + i * 44);
+    Object.assign(row.style, { width: "260px", height: "40px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "12px", whiteSpace: "nowrap" });
+    row.append(Object.assign(el("span", { textContent: name }), { style: `font-size:24px;color:${C.secondary}` }),
+               Object.assign(el("span", { textContent: level }), { style: `font-size:26px;font-weight:700;color:${color}` }));
+  });
   L(p, w.description + DOT + "H " + num(w.high) + DEG + "  L " + num(w.low) + DEG, 36, 234, 528, 50, 38, false, C.text);
   L(p, "Feels " + num(w.feelsLike) + DEG + DOT + (w.windDir ? w.windDir + " " : "") + num(w.windMph) + " mph" + DOT + num(w.humidity) + "% humidity",
     36, 284, 528, 40, 28, false, C.secondary);
@@ -660,6 +716,51 @@ function drawWeather(root) {
     L(p, num(d.high) + DEG + " / " + num(d.low) + DEG, 174, y, 154, 50, 30, false, C.text);
     L(p, d.description + (d.precip >= 20 ? DOT + d.precip + "%" : ""), 328, y, 236, 50, 24, false, C.muted);
   });
+}
+
+// ---------- Air quality, UV, NWS alerts (mirror Util.brs hbAqiLevel / hbUvLevel / hbUntilText) ----------
+function aqiLevel(v) {
+  if (v <= 50) return ["Good", "#7BD389"]; if (v <= 100) return ["Moderate", "#FFD866"]; if (v <= 150) return ["Sensitive", "#FF9F43"];
+  if (v <= 200) return ["Unhealthy", "#FF6B6B"]; if (v <= 300) return ["Very unhealthy", "#C38BFF"]; return ["Hazardous", "#C0546A"];
+}
+function uvLevel(v) {
+  if (v <= 2) return ["Low", "#7BD389"]; if (v <= 5) return ["Moderate", "#FFD866"]; if (v <= 7) return ["High", "#FF9F43"];
+  if (v <= 10) return ["Very high", "#FF6B6B"]; return ["Extreme", "#C38BFF"];
+}
+function untilText(iso) {
+  if (!iso || iso.length < 16) return "";
+  const day = iso.slice(0, 10), dow = new Date(day + "T12:00:00").toLocaleDateString("en-US", { weekday: "short" });
+  const h = +iso.slice(11, 13), mi = +iso.slice(14, 16), t = new Date(todayKey() + "T12:00:00");
+  t.setDate(t.getDate() + 1);
+  if (!h && !mi && day === keyOf(t)) return "until midnight";
+  return "until " + (day !== todayKey() ? dow + " " : "") + hm(h, mi);
+}
+const activeAlerts = () => (tv.alerts || []).filter((a) => !a.endsAt || a.endsAt > Date.now());
+const activeWarnings = () => activeAlerts().filter((a) => a.warning);
+
+async function fetchAlerts() {
+  const lat = parseFloat(state.location.latitude), lon = parseFloat(state.location.longitude);
+  if (!lat && !lon) return [];
+  const j = await fetch(`https://api.weather.gov/alerts/active?point=${lat.toFixed(4)},${lon.toFixed(4)}`, { headers: { Accept: "application/geo+json" } }).then((r) => r.json());
+  const rank = { Extreme: 0, Severe: 1, Moderate: 2, Minor: 3 }, seen = new Set(), out = [];
+  for (const f of j.features || []) {
+    const p = f.properties || {};
+    if (!p.event || p.status === "Test" || p.messageType === "Cancel" || seen.has(p.event)) continue;
+    seen.add(p.event);
+    const ends = p.ends || p.expires || "";
+    const warning = /(Warning|Emergency)$/.test(p.event) || p.severity === "Extreme";
+    out.push({ event: p.event, warning, ends, endsAt: ends ? Date.parse(ends) : 0, sort: (rank[p.severity] ?? 4) - (warning ? 10 : 0) });
+  }
+  return out.sort((a, b) => a.sort - b.sort || a.event.localeCompare(b.event));
+}
+async function fetchAqi() {
+  const { latitude: lat, longitude: lon } = state.location;
+  const j = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&current=us_aqi&timezone=auto`).then((r) => r.json());
+  return rnd(j.current && j.current.us_aqi);
+}
+async function loadAlerts() {
+  try { tv.alerts = await fetchAlerts(); } catch { return; }
+  renderTv();
 }
 
 // Static layers are redrawn on every edit; the news crawl lives in its own layer so it keeps moving.
@@ -686,7 +787,7 @@ function buildTvLayers() {
   R(stage, 0, 980, 1920, 100, C.band);
   R(stage, 0, 980, 1920, 1, "rgba(255,255,255,.2)");
   stage.append(Object.assign(el("div", { id: "tvStatic", className: "r" }), { style: "left:0;top:0;width:1920px;height:1080px" }));
-  const pill = R(stage, 56, 1002, 256, 56, C.accent);
+  const pill = crawl.pill = R(stage, 56, 1002, 256, 56, C.accent);
   Object.assign(pill.style, { borderRadius: "28px", boxShadow: "inset 0 0 0 1.5px #8CC6FF" });
   crawl.tag = L(stage, "NEWS", 56, 1002, 256, 56, 26, true, C.ink, "center");
   const clip = el("div", { className: "r" });
@@ -704,9 +805,29 @@ function crawlSections() {
   return state.settings.ticker.sections.filter((k) => (n[k] || []).length);
 }
 
+function crawlItem(title, meta, metaColor) {
+  crawl.track.append(span(title, 40, true, C.text, 16));
+  if (meta) { const sp = span(meta, 28, false, metaColor, 0); sp.style.opacity = 0.8; crawl.track.append(sp); }
+  const dot = el("span"); Object.assign(dot.style, { display: "inline-block", width: "8px", height: "8px", background: "rgba(255,255,255,.4)", margin: "0 32px" });
+  crawl.track.append(dot);
+}
+function setTag(text, warn) {
+  crawl.tag.textContent = text; crawl.tag.style.color = warn ? C.white : C.ink;
+  Object.assign(crawl.pill.style, { background: warn ? "#FF5A4E" : C.accent, boxShadow: warn ? "none" : "inset 0 0 0 1.5px #8CC6FF" });
+}
+
 function startPass() {
   const keys = crawlSections();
   crawl.track.replaceChildren();
+  // Severe weather warnings replace the news until they expire (mirrors NewsTicker.brs startWarningPass)
+  const warnings = activeWarnings();
+  if (warnings.length) {
+    setTag("WARNING", true);
+    for (const a of warnings) { const u = untilText(a.ends); crawlItem(a.event, (u ? u + DOT : "") + "National Weather Service", "#FFB3AD"); }
+    crawl.width = crawl.track.scrollWidth; crawl.x = CLIP_W;
+    return;
+  }
+  setTag("NEWS", false);
   if (!keys.length) {
     crawl.tag.textContent = "NEWS";
     crawl.track.append(span("Loading headlines...", 40, false, C.secondary));
@@ -716,12 +837,7 @@ function startPass() {
   crawl.section = (crawl.section + 1) % keys.length;
   const key = keys[crawl.section];
   crawl.tag.textContent = key === "following" ? "FOLLOWING" : "TOP STORIES";
-  for (const it of news()[key]) {
-    crawl.track.append(span(it.title, 40, true, C.text, 16));
-    if (it.source) { const sp = span(it.source, 28, false, C.accent, 0); sp.style.opacity = 0.8; crawl.track.append(sp); }
-    const dot = el("span"); Object.assign(dot.style, { display: "inline-block", width: "8px", height: "8px", background: "rgba(255,255,255,.4)", margin: "0 32px" });
-    crawl.track.append(dot);
-  }
+  for (const it of news()[key]) crawlItem(it.title, it.source, C.accent);
   crawl.width = crawl.track.scrollWidth;
   crawl.x = CLIP_W;
 }
@@ -884,7 +1000,7 @@ async function fetchWeather() {
   if (!parseFloat(lat) && !parseFloat(lon)) return { error: "Set latitude/longitude under Connection" };
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}` +
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day" +
-    "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code" +
+    "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code,uv_index_max" +
     "&hourly=temperature_2m,precipitation_probability,weather_code,is_day" +
     "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=5";
   const j = await fetch(url).then((r) => r.json());
@@ -910,7 +1026,7 @@ async function fetchWeather() {
     windDir: c.wind_direction_10m == null ? null : ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.floor((c.wind_direction_10m + 22.5) / 45) % 8],
     description: Array.isArray(desc) ? desc[c.is_day === 1 ? 0 : 1] : desc,
     high: rnd(first("temperature_2m_max")), low: rnd(first("temperature_2m_min")),
-    precipChance: rnd(first("precipitation_probability_max")), sunrise: first("sunrise"), sunset: first("sunset"), hours, days, next24,
+    precipChance: rnd(first("precipitation_probability_max")), uvMax: rnd(first("uv_index_max")), aqi: await fetchAqi().catch(() => null), sunrise: first("sunrise"), sunset: first("sunset"), hours, days, next24,
     icon: weatherIcon(c.weather_code, c.is_day === 1), isDay: c.is_day === 1, code: c.weather_code };
 }
 
@@ -927,7 +1043,7 @@ async function fetchNews() {
 }
 
 async function loadTvData() {
-  const [w, n] = await Promise.allSettled([fetchWeather(), fetchNews()]);
+  const [w, n] = await Promise.allSettled([fetchWeather(), fetchNews(), loadAlerts()]);
   tv.data = { weather: w.status === "fulfilled" ? w.value : { error: "Weather unavailable" },
               news: n.status === "fulfilled" ? n.value : { error: "News unavailable" } };
   renderTv();
@@ -998,7 +1114,7 @@ async function save() {
 $("save").onclick = save;
 $("addNote").onclick = () => addNote(false);
 $("addEvent").onclick = () => addNote(true);
-$("clearPast").onclick = () => { const t = todayKey(); const before = state.notes.length; state.notes = state.notes.filter((n) => !n.date || n.date >= t); if (state.notes.length !== before) { renderNotes(); markDirty(); } };
+$("clearPast").onclick = () => { const before = state.notes.length; state.notes = state.notes.filter((n) => !isPast(n)); if (state.notes.length !== before) { renderNotes(); markDirty(); } };
 $("speed").addEventListener("change", () => { state.settings.ticker.speed = $("speed").value; markDirty(); });
 $("tickers").addEventListener("input", () => {
   state.settings.spotlight.tickers = $("tickers").value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean).slice(0, 6);
@@ -1033,6 +1149,7 @@ function restartSpot() {
 }
 restartSpot();
 setInterval(() => { if (new Date().getSeconds() === 0) renderTv(); }, 1000);
+setInterval(() => { if (!$("app").hidden) loadAlerts(); }, 5 * 60 * 1000);
 load();
 
 // ---------- Installable app ----------
