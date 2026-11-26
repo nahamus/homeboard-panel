@@ -70,7 +70,6 @@
   .note.head { border-top: 0; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding-top: 0; }
   .note.hidden input[type=text] { opacity: .5; }
   .note.past input { text-decoration: line-through; opacity: .55; }
-  .note.pinned select.repeat { visibility: hidden; }
   .note .next { grid-column: 2 / -1; color: var(--muted); font-size: 12px; margin-top: -4px; }
   select.repeat { width: 100%; min-width: 0; }
   .row-actions { display: flex; gap: 4px; }
@@ -81,7 +80,6 @@
     .note input[type=date] { grid-column: 2; }
     .note input[type=time] { grid-column: 3; }
     .note select.repeat { grid-column: 2 / -1; }
-    .note.pinned select.repeat { display: none; }
     .note.head { display: none; }
     .row-actions { grid-column: 2 / -1; }
   }
@@ -98,6 +96,16 @@
   .tv-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
   .tv-bar label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
   .tv-frame { background: #000; border-radius: 10px; padding: 10px; }
+  /* Flash message */
+  .msg-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: 8px; }
+  #msgState:empty { display: none; }
+  #msgState b { color: var(--warm); font-weight: 600; }
+  #tvDirty { font-size: 12px; }
+  @media (max-width: 700px) {
+    .msg-row { grid-template-columns: 1fr auto; }
+    .msg-row input { grid-column: 1 / -1; }
+    #tvDirty { display: none; }   /* the bottom bar already says so */
+  }
   .tv-viewport { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 3px; }
   .tv { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0;
         background: #0B0F14; color: #F5F7FA; font-family: "Segoe UI", system-ui, sans-serif; }
@@ -110,6 +118,8 @@
               border: 1.5px solid rgba(255,255,255,.13); box-sizing: border-box; }
   .tv img.icon { position: absolute; object-fit: contain; }
   .tv-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  .muted-note { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  @keyframes tvfade { 0% { opacity: 1; } 40% { opacity: 0; } 100% { opacity: 1; } }
   #signin { max-width: 560px; margin: 48px auto; }
   #signin ol { padding-left: 20px; color: var(--muted); font-size: 14px; }
   #signin ol b { color: var(--text); }
@@ -156,12 +166,13 @@
     /* Save + status live in a bar at the bottom, in thumb reach */
     body.signed-in { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
     body.signed-in #status { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; align-items: center;
-      min-height: calc(68px + env(safe-area-inset-bottom)); padding: 10px 136px calc(10px + env(safe-area-inset-bottom)) 16px;
+      min-height: calc(68px + env(safe-area-inset-bottom)); padding: 10px 236px calc(10px + env(safe-area-inset-bottom)) 16px;
       background: var(--panel); border-top: 1px solid var(--line); font-size: 14px; box-shadow: 0 -4px 16px rgba(0,0,0,.12); }
     body.signed-in #status:empty::before { content: "No changes"; }
     body.signed-in #status { border-radius: 0; }
-    body.signed-in #save { position: fixed; right: 16px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 7;
-      min-width: 108px; min-height: 44px; font-size: 16px; }
+    body.signed-in #save, body.signed-in #cancel { position: fixed; right: 16px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 7;
+      min-width: 96px; min-height: 44px; font-size: 16px; }
+    body.signed-in #cancel { right: 120px; }
   }
 </style>
 </head>
@@ -170,7 +181,7 @@
   <img class="logo" src="icons/favicon-64.png" alt="" width="28" height="28">
   <h1>HomeBoard Control</h1>
   <span id="status" class="status">Loading…</span>
-  <button id="install" hidden title="Install HomeBoard as an app">Install app</button>
+  <button id="cancel" hidden disabled title="Undo all changes since the last save">Cancel</button>
   <button id="save" class="primary" disabled>Save</button>
 </header>
 
@@ -192,19 +203,33 @@
   <section class="tv-section">
     <div class="tv-bar">
       <h2 style="margin:0 8px 0 0; flex:1">TV preview</h2>
+      <span id="tvDirty" class="status dirty" hidden>Showing unsaved changes</span>
       <button id="tvRefresh" title="Re-fetch weather and news">Refresh data</button>
     </div>
     <div class="tv-frame"><div class="tv-viewport" id="tvViewport"><div class="tv" id="tv"></div></div></div>
     <p class="tv-note" id="tvNote">A true-to-scale 1920×1080 replica of the screensaver, using your unsaved edits, live weather and your news digest. The TV uses Roku's own font, so text widths can differ slightly.</p>
   </section>
 
+  <section id="msgSection">
+    <h2>Flash message</h2>
+    <p class="hint">Shows big across the board, over everything, for as long as you choose. Check it in the preview, then Save.</p>
+    <div class="msg-row">
+      <input id="msgText" type="text" maxlength="160" placeholder="Dinner's ready!" autocomplete="off" aria-label="Message">
+      <select id="msgFor" aria-label="Show for">
+        <option value="5">5 min</option><option value="15" selected>15 min</option><option value="30">30 min</option>
+        <option value="60">1 hour</option><option value="120">2 hours</option><option value="midnight">Until midnight</option>
+      </select>
+      <button id="msgClear" disabled>Clear</button>
+    </div>
+    <p class="hint after" id="msgState"></p>
+  </section>
+
   <section>
-    <h2>Notes &amp; events</h2>
-    <p class="hint">No date: a pinned note at the top. With a date: an event, shown until its day ends, or set it to repeat. Untick to hide without deleting.</p>
+    <h2>Events</h2>
+    <p class="hint">Shown under "Coming up" until the day ends, or set them to repeat. Untick to hide without deleting.</p>
     <div class="note head"><span></span><span>Title</span><span>Date</span><span>Time</span><span>Repeat</span><span>Details</span><span></span></div>
     <div id="notes"></div>
     <div class="toolbar">
-      <button id="addNote">+ Note</button>
       <button id="addEvent">+ Event</button>
       <button id="clearPast">Remove past events</button>
     </div>
@@ -221,8 +246,16 @@
         <option value="snow">Snow</option><option value="storm">Storm</option><option value="fog">Fog</option>
       </select>
       <p class="hint after">Pick a scene to try it out (it shows on the TV too), then set it back to Automatic.</p>
+      <h3>Night mode</h3>
+      <div class="page"><label><input id="nightOn" type="checkbox"> Switch to a dim clock at night</label></div>
+      <div class="loc" style="margin-top:6px">
+        <label>From<input id="nightStart" type="time"></label>
+        <label>To<input id="nightEnd" type="time"></label>
+      </div>
+      <p class="hint after">Hides the board and dims the sky. The clock moves every few minutes to protect the screen. Messages still show.</p>
+      <div class="page" style="border-top:0"><label><input id="nightPreview" type="checkbox"> Show night mode in the preview</label></div>
       <h3>News banner</h3>
-      <p class="hint">Headlines from your news digest crawl along the bottom, one section per pass.</p>
+      <p class="hint">Headlines from your news digest crawl along the bottom, one section per pass. Tick the sections to show and order them with the arrows.</p>
       <div id="banner"></div>
       <div class="field"><label for="speed">Scroll speed</label>
         <select id="speed"><option value="slow">Slow</option><option value="normal">Normal</option><option value="fast">Fast</option></select></div>
@@ -241,7 +274,7 @@
 
     <section>
       <h2>Connection</h2>
-      <p class="hint">Save commits to this private repo. The TV reads it from there within about 2 minutes.</p>
+      <p class="hint">Save commits to this private repo. The TV reads it from there within about 30 seconds.</p>
       <div class="tv-url" id="pubRepo"></div>
       <p class="hint after" id="pubWhen"></p>
       <h3>Preview location</h3>
@@ -262,16 +295,21 @@ const CONFIG = {
   digestUrl: "https://nahamus.github.io/news-digest/latest.json", digestName: "News Digest", maxStories: 8,
 };
 const TOKEN_KEY = "homeboard.token";
+// News sections: Top Stories, Following, then every category in the digest (filled in when it loads)
 const SECTION_NAMES = { top: "Top Stories", following: "Following" };
-const ALL_SECTIONS = Object.keys(SECTION_NAMES);
+const DEFAULT_SECTIONS = ["top", "following"];
+const sectionKey = (v) => String(v ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40);
+const sectionName = (k) => SECTION_NAMES[k] || k.charAt(0).toUpperCase() + k.slice(1);
 const SPEEDS = { slow: 80, normal: 110, fast: 150 };   // px per second, same as the TV
 const SKIES = ["auto", "night", "dawn", "day", "dusk", "cloudy", "rain", "snow", "storm", "fog"];
 const SPOT_NAMES = { markets: "Markets", onthisday: "On this day", countdowns: "Countdowns" };
 const ALL_SPOT = Object.keys(SPOT_NAMES);
 const REPEATS = { "": "Once", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", yearly: "Yearly" };
 let state = { notes: [], countdowns: [], location: { name: "Home", latitude: "", longitude: "" },
-  settings: { ticker: { sections: [...ALL_SECTIONS], speed: "normal" }, sky: "auto", spotlight: { modules: [...ALL_SPOT], tickers: ["BTC-USD"], seconds: 45 } } };
+  settings: { ticker: { sections: [...DEFAULT_SECTIONS], speed: "normal" }, sky: "auto", spotlight: { modules: [...ALL_SPOT], tickers: ["BTC-USD"], seconds: 45 },
+    night: { enabled: false, start: "22:00", end: "06:30" } }, message: null };
 let dirty = false;
+let savedBoard = {};   // board.json as last loaded or saved, for Cancel
 let sha = null;   // version of board.json we loaded; GitHub rejects a save if it changed meanwhile
 
 const store = {
@@ -296,12 +334,12 @@ const fromB64 = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.repla
 // Same cleanup the TV expects (and the old local server did).
 function cleanBoard(b) {
   const t = (v, n) => String(v ?? "").trim().slice(0, n);
-  const notes = (b.notes || []).filter((n) => n && t(n.title, 200)).map((n) => ({
+  const notes = (b.notes || []).filter((n) => n && t(n.title, 200) && t(n.date, 10)).map((n) => ({
     show: n.show !== false, title: t(n.title, 200), date: t(n.date, 10), time: t(n.time, 8), details: t(n.details, 200),
     repeat: REPEATS[n.repeat] && n.date ? n.repeat : "" }));
   const tk = (b.settings || {}).ticker || {};
-  let sections = [...new Set((tk.sections || []).filter((k) => ALL_SECTIONS.includes(k)))];
-  if (!sections.length) sections = [...ALL_SECTIONS];
+  let sections = [...new Set((tk.sections || []).map(sectionKey).filter(Boolean))];
+  if (!sections.length) sections = [...DEFAULT_SECTIONS];
   const speed = SPEEDS[tk.speed] ? tk.speed : "normal";
   const loc = b.location || {};
   const sky = SKIES.includes((b.settings || {}).sky) ? b.settings.sky : "auto";
@@ -310,8 +348,16 @@ function cleanBoard(b) {
   const tickers = Array.isArray(sp.tickers) ? sp.tickers.map((x) => t(x, 15).toUpperCase()).filter(Boolean).slice(0, 6) : ["BTC-USD"];
   const countdowns = (b.countdowns || []).filter((c) => c && t(c.title, 80)).map((c) => ({ title: t(c.title, 80), date: t(c.date, 10), yearly: !!c.yearly }));
   const seconds = [20, 30, 45, 60, 90, 120].includes(+sp.seconds) ? +sp.seconds : 45;
-  return { notes, countdowns, settings: { ticker: { sections, speed }, sky, spotlight: { modules, tickers, seconds } },
-           location: { name: t(loc.name, 60) || "Home", latitude: t(loc.latitude, 20), longitude: t(loc.longitude, 20) } };
+  const nt = (b.settings || {}).night || {}, hhmm = (v, d) => (/^\d{2}:\d{2}$/.test(v || "") ? v : d);
+  const night = { enabled: nt.enabled === true, start: hhmm(nt.start, "22:00"), end: hhmm(nt.end, "06:30") };
+  // A flash message is kept until it expires (the panel sends and clears it on its own commits)
+  const mg = b.message && b.message.pending ? stampMessage(b.message) : b.message || {};
+  const msgUntil = Number.isFinite(+mg.until) ? Math.floor(+mg.until) : 0;
+  const message = t(mg.text, 160) && (!msgUntil || msgUntil * 1000 > Date.now())
+    ? { text: t(mg.text, 160), sentAt: Math.floor(+mg.sentAt) || 0, until: msgUntil } : null;
+  return { notes, countdowns, settings: { ticker: { sections, speed }, sky, spotlight: { modules, tickers, seconds }, night },
+           location: { name: t(loc.name, 60) || "Home", latitude: t(loc.latitude, 20), longitude: t(loc.longitude, 20) },
+           ...(message ? { message } : {}) };
 }
 
 const $ = (id) => document.getElementById(id);
@@ -338,26 +384,91 @@ function nextOccurrence(start, rpt, today = todayKey()) {
 }
 const eventDate = (n) => nextOccurrence(n.date, n.repeat);
 const isPast = (n) => !!n.date && eventDate(n) < todayKey();
-const rowClass = (n) => "note" + (n.show ? "" : " hidden") + (n.date ? "" : " pinned") + (isPast(n) ? " past" : "");
+const rowClass = (n) => "note" + (n.show ? "" : " hidden") + (isPast(n) ? " past" : "");
 const prettyDate = (k) => new Date(k + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
+// ---------- Flash message: edited like everything else, previewed live, written by Save ----------
+// state.message is the saved { text, sentAt, until }, or a draft { text, minutes, pending: true }
+// whose clock starts when it's saved.
+const nowSec = () => Math.floor(Date.now() / 1000);
+function stampMessage(m) {
+  const sent = nowSec();
+  let until = sent + (+m.minutes || 15) * 60;
+  if (m.minutes === "midnight") { const d = new Date(); d.setHours(24, 0, 0, 0); until = Math.floor(d / 1000); }
+  return { text: m.text, sentAt: sent, until };
+}
+const activeMessage = () => {
+  const m = state.message;
+  if (!m || !m.text) return null;
+  if (m.pending) return stampMessage(m);
+  return !m.until || m.until > nowSec() ? m : null;
+};
+const clockText = (sec) => { const d = new Date(sec * 1000); return !d.getHours() && !d.getMinutes() ? "midnight" : hm(d.getHours(), d.getMinutes()); };
+const forText = (v) => (v === "midnight" ? "until midnight" : "for " + $("msgFor").selectedOptions[0].textContent);
+
+function renderMessage(force = false) {
+  const m = state.message, box = $("msgState");
+  if (m && !m.pending && !activeMessage()) state.message = null;   // expired while the page was open
+  if (force || document.activeElement !== $("msgText")) $("msgText").value = state.message ? state.message.text : "";
+  if (state.message && state.message.pending) $("msgFor").value = state.message.minutes;
+  $("msgClear").disabled = !state.message;
+  if (!state.message) box.replaceChildren();
+  else if (state.message.pending) box.replaceChildren(el("b", { textContent: "Not on the TV yet. " }), `Save to show it ${forText(state.message.minutes)}.`);
+  else box.replaceChildren(el("b", { textContent: "On the TV" }), state.message.until ? ` until ${clockText(state.message.until)}.` : ".");
+}
+function editMessage() {
+  const text = $("msgText").value.trim().slice(0, 160);
+  state.message = text ? { text, minutes: $("msgFor").value, pending: true } : null;
+  renderMessage(); markDirty();
+}
+
+// ---------- Night mode (mirrors applyNight() in components/HomeBoardScene.brs) ----------
+const clockMin = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(s || ""); return m && +m[1] < 24 && +m[2] < 60 ? +m[1] * 60 + +m[2] : -1; };
+function inWindow(now, start, end) {
+  if (start < 0 || end < 0 || start === end) return false;
+  return start < end ? now >= start && now < end : now >= start || now < end;
+}
+function nightActive() {
+  if (tv.previewNight) return true;
+  const n = state.settings.night, d = new Date();
+  return n.enabled && inWindow(d.getHours() * 60 + d.getMinutes(), clockMin(n.start), clockMin(n.end));
+}
+function renderNightSettings() {
+  const n = state.settings.night;
+  $("nightOn").checked = n.enabled; $("nightStart").value = n.start; $("nightEnd").value = n.end;
+}
+
 function setStatus(text, cls = "") { const s = $("status"); s.textContent = text; s.className = "status " + cls; }
-function markDirty() { dirty = true; $("save").disabled = false; setStatus("Unsaved changes", "dirty"); renderTv(); }
+function setDirty(on) {
+  dirty = on; $("save").disabled = !on; $("cancel").disabled = !on; $("tvDirty").hidden = !on;
+}
+function markDirty() { setDirty(true); setStatus("Unsaved changes", "dirty"); renderTv(); }
+function renderAll() {
+  $("locName").value = state.location.name; $("locLat").value = state.location.latitude; $("locLon").value = state.location.longitude;
+  renderNotes(); renderBanner(); renderSpotlightSettings(); renderNightSettings(); renderMessage(true); renderTv();
+}
+// Cancel: back to the board as it was last loaded or saved
+function cancelChanges() {
+  if (!dirty || !confirm("Undo all changes since the last save?")) return;
+  state = cleanBoard(savedBoard); setDirty(false);
+  renderAll(); restartSpot(); loadMarkets();
+  setStatus("Changes undone", "ok"); setTimeout(() => { if (!dirty) setStatus("Up to date"); }, 3000);
+}
 
 function renderNotes() {
   const box = $("notes"); box.replaceChildren();
-  if (!state.notes.length) { box.append(el("div", { className: "empty", textContent: "No notes yet. Add one below." })); }
+  if (!state.notes.length) { box.append(el("div", { className: "empty", textContent: "No events yet. Add one below." })); }
   state.notes.forEach((n, i) => {
     const row = el("div", { className: rowClass(n) });
     const next = el("div", { className: "next" });
     const showNext = () => { const k = n.repeat && n.date ? eventDate(n) : ""; next.textContent = k && k !== n.date ? `Next: ${prettyDate(k)}` : ""; next.hidden = !next.textContent; };
     const bind = (input, key) => { input.addEventListener("input", () => {
       n[key] = input.type === "checkbox" ? input.checked : input.value;
-      if (key === "date" && !n.date) { n.repeat = ""; repeat.value = ""; }
       row.className = rowClass(n); showNext(); markDirty(); }); return input; };
     const show = bind(el("input", { type: "checkbox", checked: n.show, title: "Show on TV" }), "show");
     const title = bind(el("input", { type: "text", value: n.title, placeholder: "Title", className: "title" }), "title");
-    const date = bind(el("input", { type: "date", value: n.date }), "date");
+    const date = bind(el("input", { type: "date", value: n.date, required: true }), "date");
+    date.addEventListener("change", () => { if (!date.value) { date.value = n.date = n.date || todayKey(); } });
     const time = bind(el("input", { type: "time", value: n.time }), "time");
     const repeat = bind(el("select", { className: "repeat", title: "Repeat" }, ...Object.entries(REPEATS).map(([v, label]) => el("option", { value: v, textContent: label }))), "repeat");
     repeat.value = n.repeat || "";
@@ -372,8 +483,8 @@ function renderNotes() {
   });
 }
 
-function addNote(withDate) {
-  state.notes.push({ show: true, title: "", date: withDate ? todayKey() : "", time: "", details: "", repeat: "" });
+function addEvent() {
+  state.notes.push({ show: true, title: "", date: todayKey(), time: "", details: "", repeat: "" });
   renderNotes(); markDirty();
   const inputs = $("notes").querySelectorAll("input.title"); inputs[inputs.length - 1].focus();
 }
@@ -402,7 +513,8 @@ function renderSpotlightSettings() {
 function renderBanner() {
   const box = $("banner"); box.replaceChildren();
   const enabled = state.settings.ticker.sections;
-  const order = [...enabled, ...ALL_SECTIONS.filter((k) => !enabled.includes(k))];
+  const order = [...enabled, ...Object.keys(SECTION_NAMES).filter((k) => !enabled.includes(k))];
+  const n = news();
   order.forEach((key, i) => {
     const on = enabled.includes(key);
     const cb = el("input", { type: "checkbox", checked: on });
@@ -413,7 +525,7 @@ function renderBanner() {
     });
     const move = (d) => { const o = [...order]; [o[i], o[i + d]] = [o[i + d], o[i]]; state.settings.ticker.sections = o.filter((k) => enabled.includes(k)); renderBanner(); markDirty(); };
     box.append(el("div", { className: "page" },
-      el("label", {}, cb, SECTION_NAMES[key]),
+      el("label", {}, cb, sectionName(key), n && !(n[key] || []).length ? el("span", { className: "muted-note", textContent: "not in today's digest" }) : ""),
       el("button", { className: "icon", textContent: "↑", disabled: i === 0 || !on, onclick: () => move(-1) }),
       el("button", { className: "icon", textContent: "↓", disabled: i === order.length - 1 || !on || !enabled.includes(order[i + 1]), onclick: () => move(1) })));
   });
@@ -459,10 +571,9 @@ const num = (v) => (v === null || v === undefined ? "--" : String(v));
 function notesView() {
   const today = todayKey();
   const shown = state.notes.filter((n) => n.show && n.title.trim());
-  const pinned = shown.filter((n) => !n.date);
   const events = shown.filter((n) => n.date).map((n) => ({ ...n, date: eventDate(n) })).filter((n) => n.date >= today)
     .sort((a, b) => (a.date + " " + (a.time || "")).localeCompare(b.date + " " + (b.time || "")));
-  return { pinned, events, total: pinned.length + events.length };
+  return { events, total: events.length };
 }
 function news() { return tv.data && tv.data.news && !tv.data.news.error ? tv.data.news : null; }
 
@@ -478,27 +589,28 @@ function drawHeader(root) {
 
 // Left column (x 56, w 1176, y 190..950): "Coming up" shrinks to its notes, "Today" fills the rest.
 // Mirrors layoutLeft() in components/HomeBoardScene.brs and NotesPage.brs.
-function notesRows(listHeight) {
-  const { pinned, events, total } = notesView();
+// At most 3 rows; more events page every 12 s (mirrors NotesPage.brs maxRows / pageSeconds).
+const NOTE_ROWS = 3, PAGE_MS = 12000;
+function notesRows() {
+  const { events, total } = notesView();
   const today = new Date(todayKey() + "T00:00:00");
-  const rows = []; let y = 0;
-  for (const n of pinned) { const h = n.details ? 120 : 84; if (y + h > listHeight) break; rows.push({ n, y, h, pinned: true }); y += h; }
-  for (const n of events) {
-    if (y + 118 > listHeight) break;
+  const pages = Math.max(1, Math.ceil(events.length / NOTE_ROWS));
+  const page = pages > 1 ? Math.floor(Date.now() / PAGE_MS) % pages : 0;
+  const rows = events.slice(page * NOTE_ROWS, page * NOTE_ROWS + NOTE_ROWS).map((n, i) => {
     const d = new Date(n.date + "T00:00:00");
-    rows.push({ n, y, h: 118, d, days: Math.round((d - today) / 86400000) }); y += 118;
-  }
-  return { rows, used: y, total };
+    return { n, y: i * 118, h: 118, d, days: Math.round((d - today) / 86400000) };
+  });
+  return { rows, used: Math.min(events.length, NOTE_ROWS) * 118, total, page, pages };
 }
 
 function drawLeft(root) {
   const colTop = 190, colH = 760, gap = 24, minSpot = 250;
-  const { rows, used, total } = notesRows(704 - 58);
-  const notesH = total ? used + 108 : 104;
+  const view = notesRows();
+  const notesH = view.total ? view.used + 108 : 104;
   if (colH - notesH - gap >= minSpot) {
-    total ? drawNotes(root, rows, total, notesH) : drawNotesStrip(root);
+    view.total ? drawNotes(root, view, notesH) : drawNotesStrip(root);
     drawSpotlight(root, colTop + notesH + gap, colH - notesH - gap);
-  } else drawNotes(root, rows, total, colH);
+  } else drawNotes(root, view, colH);
 }
 
 function drawNotesStrip(root) {
@@ -510,21 +622,26 @@ function drawNotesStrip(root) {
   if (next) L(p, `Next: ${next.title}${DOT}${daysText(next.days)}`, 660, 0, 1104 - 660, 48, 30, false, C.warm, "right");
 }
 
-function drawNotes(root, rows, total, cardH) {
+let lastNotesPage = 0;
+function drawNotes(root, { rows, total, page, pages }, cardH) {
   Glass(root, 56, 190, 1176, cardH);
   const W = 1104, p = G(root, 92, 218);
   L(p, "COMING UP", 0, 0, 700, 40, 28, true, C.heading);
   const list = G(p, 0, 58);
+  if (page !== lastNotesPage) list.style.animation = "tvfade .8s ease";   // cross-fade on a new page
+  lastNotesPage = page;
+  if (pages > 1) {
+    // "5 events" and page dots, the current page a wider pill
+    const dotsW = 30 + (pages - 1) * 22;
+    L(p, `${total} events`, W - dotsW - 18 - 400, 0, 400, 40, 26, false, C.muted, "right");
+    for (let i = 0, x = W - dotsW; i < pages; i++) {
+      const dw = i === page ? 30 : 12, dot = R(p, x, 14, dw, 12, i === page ? C.heading : "rgba(255,255,255,.25)");
+      dot.style.borderRadius = "6px"; x += dw + 10;
+    }
+  }
   rows.forEach((r, i) => {
     if (i) R(list, 0, r.y, W, 1, "rgba(255,255,255,.1)");
     const n = r.n;
-    if (r.pinned) {
-      const yy = r.y + 4;
-      R(list, 0, yy + 10, 8, n.details ? 92 : 56, C.warm);
-      L(list, n.title, 32, yy, W - 32, 64, 48, true, C.text);
-      if (n.details) L(list, n.details, 32, yy + 60, W - 32, 44, 34, false, C.secondary);
-      return;
-    }
     const yy = r.y + 4, d = r.d, days = r.days;
     if (days === 0) {
       const g = Glass(list, -14, yy - 2, W + 28, 112, "chip");
@@ -540,7 +657,6 @@ function drawNotes(root, rows, total, cardH) {
     if (n.details) when += DOT + n.details;
     L(list, when, 160, yy + 62, W - 160, 44, 34, false, days === 0 ? C.warm : C.secondary);
   });
-  if (rows.length < total) L(p, `+${total - rows.length} more`, W - 400, 0, 400, 40, 26, false, C.muted, "right");
 }
 
 // ---------- Spotlight ----------
@@ -701,7 +817,17 @@ function drawWeather(root) {
   L(p, "Feels " + num(w.feelsLike) + DEG + DOT + (w.windDir ? w.windDir + " " : "") + num(w.windMph) + " mph" + DOT + num(w.humidity) + "% humidity",
     36, 284, 528, 40, 28, false, C.secondary);
   R(p, 36, 344, 528, 1, C.hair);
-  (w.hours || []).slice(0, 5).forEach((h, i) => {
+  // From 6 PM a "Tomorrow" summary replaces the next hours, and the day list starts a day later
+  const days = w.days || [], evening = new Date().getHours() >= 18 && days.length > 0;
+  if (evening) {
+    const t = days[0], tn = tomorrowNote(), when = new Date(todayKey() + "T12:00:00");
+    when.setDate(when.getDate() + 1);
+    L(p, "TOMORROW" + DOT + when.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase(), 36, 358, 528, 32, 24, true, C.heading);
+    Icon(p, t.icon, 36, 400, 104);
+    L(p, num(t.high) + DEG + " / " + num(t.low) + DEG, 160, 394, 404, 52, 44, true, C.white);
+    L(p, t.description + (t.precip >= 20 ? DOT + t.precip + "% rain" : ""), 160, 446, 404, 36, 26, false, C.secondary);
+    L(p, tn || "Nothing scheduled", 160, 486, 404, 40, 26, false, tn ? C.warm : C.muted);
+  } else (w.hours || []).slice(0, 5).forEach((h, i) => {
     const x = 36 + Math.floor(i * 105.6);
     L(p, h.label, x, 358, 106, 32, 24, false, C.muted, "center");
     Icon(p, h.icon, x + 19, 394, 68);
@@ -709,7 +835,7 @@ function drawWeather(root) {
     L(p, h.precip >= 10 ? h.precip + "%" : "", x, 506, 106, 28, 22, false, C.accent, "center");
   });
   R(p, 36, 542, 528, 1, C.hair);
-  (w.days || []).slice(0, 4).forEach((d, i) => {
+  days.slice(evening ? 1 : 0, evening ? 5 : 4).forEach((d, i) => {
     const y = 554 + i * 50;
     Icon(p, d.icon, 36, y + 4, 42);
     L(p, d.name, 94, y, 80, 50, 30, true, C.text);
@@ -763,15 +889,79 @@ async function loadAlerts() {
   renderTv();
 }
 
+// ---------- Night face and flash message (mirror HomeBoardScene.xml night / msg groups) ----------
+function drawNight(root) {
+  R(root, 0, 0, 1920, 1080, "rgba(0,0,0,.78)");
+  if (activeMessage()) return;   // the face hides while a message shows
+  // The TV picks a random spot every 3 minutes; the preview does the same from the clock
+  const slot = Math.floor(Date.now() / 180000), rand = (k) => { const v = Math.sin(slot * 12.9898 + k * 78.233) * 43758.5453; return v - Math.floor(v); };
+  const f = G(root, 60 + Math.floor(rand(1) * 900), 60 + Math.floor(rand(2) * 530));
+  const now = new Date(), h = now.getHours();
+  const row = G(f, 0, 0);
+  Object.assign(row.style, { width: "900px", display: "flex", justifyContent: "center", alignItems: "flex-start", whiteSpace: "nowrap" });
+  row.append(Object.assign(el("span", { textContent: `${h % 12 || 12}:${String(now.getMinutes()).padStart(2, "0")}` }), { style: "font-size:200px;font-weight:700;line-height:230px;color:#B8C2CC" }),
+             Object.assign(el("span", { textContent: h >= 12 ? "PM" : "AM" }), { style: "font-size:64px;font-weight:700;line-height:80px;margin:116px 0 0 16px;color:#7F8C99" }));
+  L(f, now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }), 0, 232, 900, 56, 40, false, "#8C97A3", "center");
+  const w = tv.data && tv.data.weather;
+  if (w && typeof w.temp === "number") {
+    const wr = G(f, 0, 300);
+    Object.assign(wr.style, { width: "900px", height: "70px", display: "flex", justifyContent: "center", alignItems: "center", gap: "14px", whiteSpace: "nowrap" });
+    if (w.icon) wr.append(Object.assign(el("img", { src: ASSETS + "wx/" + w.icon + ".png", alt: "" }), { style: "width:64px;height:64px;object-fit:contain;opacity:.7" }));
+    wr.append(Object.assign(el("span", { textContent: w.temp + DEG + DOT + w.description }), { style: "font-size:40px;color:#8C97A3" }));
+  }
+  const a = activeAlerts()[0];
+  if (a) L(f, a.event, 0, 380, 900, 50, 34, true, a.warning ? "#FF8A80" : "#E0B45A", "center");
+}
+
+// Mirrors the msg group in HomeBoardScene.xml (same card and badge art)
+function drawMessage(root, m) {
+  R(root, -40, 150, 2000, 830, "rgba(5,8,13,.65)");
+  const img = (file, x, y, w, h) => { const e = el("img", { src: ASSETS + file, alt: "" });
+    Object.assign(e.style, { position: "absolute", left: x + "px", top: y + "px", width: w + "px", height: h + "px" }); root.append(e); };
+  img("message.png", 220, 270, 1480, 600);
+  img("msg-badge.png", 324, 374, 120, 120);
+  const head = G(root, 476, 374);
+  Object.assign(head.style, { height: "44px", display: "flex", alignItems: "center", gap: "18px", whiteSpace: "nowrap", fontSize: "26px" });
+  head.append(Object.assign(el("span", { textContent: "MESSAGE" }), { style: "font-weight:700;color:#FFC857" }),
+              Object.assign(el("span", { textContent: m.sentAt ? clockText(m.sentAt) : "" }), { style: "color:#8C97A3" }));
+  const size = m.text.length > 80 ? 54 : m.text.length > 40 ? 64 : 76;
+  const box = G(root, 476, 418);
+  Object.assign(box.style, { width: "1120px", height: "276px", display: "flex", alignItems: "center" });
+  box.append(Object.assign(el("div", { textContent: m.text }), { style: `font-size:${size}px;font-weight:700;color:#fff;line-height:1.18;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden` }));
+  const now = nowSec();
+  if (m.until) L(root, "Until " + clockText(m.until), 476, 708, 700, 40, 26, false, C.secondary);
+  if (m.until > now && m.sentAt && m.until > m.sentAt) {
+    const mins = Math.ceil((m.until - now) / 60);
+    L(root, (mins >= 60 ? `${Math.floor(mins / 60)} h${mins % 60 ? ` ${mins % 60} min` : ""}` : `${mins} min`) + " left", 1196, 708, 400, 40, 26, false, "#8C97A3", "right");
+    const track = R(root, 476, 758, 1120, 10, "rgba(255,255,255,.14)"); track.style.borderRadius = "5px";
+    const fill = R(root, 476, 758, Math.max(12, Math.min(1120, Math.floor(1120 * (m.until - now) / (m.until - m.sentAt)))), 10, "#FFC857");
+    fill.style.borderRadius = "5px";
+  }
+}
+
+// Tomorrow's first event: all-day first, then by time (mirrors tomorrowNote() in HomeBoardScene.brs)
+function tomorrowNote() {
+  const d = new Date(todayKey() + "T12:00:00"); d.setDate(d.getDate() + 1);
+  const tk = keyOf(d);
+  const list = state.notes.filter((n) => n.show && n.title.trim() && n.date && nextOccurrence(n.date, n.repeat, tk) === tk)
+    .sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+  if (!list.length) return "";
+  const n = list[0], [h, mi] = (n.time || "").split(":").map(Number);
+  return (n.time ? hm(h, mi) : "All day") + "  " + n.title.trim() + (list.length > 1 ? `  +${list.length - 1} more` : "");
+}
+
 // Static layers are redrawn on every edit; the news crawl lives in its own layer so it keeps moving.
 function renderTv() {
   const root = $("tvStatic");
   if (!root) return;
   renderSky();
   root.replaceChildren();
-  drawHeader(root);
-  drawLeft(root);
-  drawWeather(root);
+  const night = nightActive();
+  (tv.bandEls || []).forEach((e) => (e.style.visibility = night ? "hidden" : ""));
+  if (night) drawNight(root);
+  else { drawHeader(root); drawLeft(root); drawWeather(root); }
+  const m = activeMessage();
+  if (m) drawMessage(root, m);
 }
 
 // ---------- News crawl (mirrors components/NewsTicker.brs) ----------
@@ -784,8 +974,7 @@ function buildTvLayers() {
   const skyLayer = el("div", { id: "tvSky", className: "r" });
   Object.assign(skyLayer.style, { left: 0, top: 0, width: "1920px", height: "1080px", overflow: "hidden" });
   stage.append(skyLayer);
-  R(stage, 0, 980, 1920, 100, C.band);
-  R(stage, 0, 980, 1920, 1, "rgba(255,255,255,.2)");
+  tv.bandEls = [R(stage, 0, 980, 1920, 100, C.band), R(stage, 0, 980, 1920, 1, "rgba(255,255,255,.2)")];
   stage.append(Object.assign(el("div", { id: "tvStatic", className: "r" }), { style: "left:0;top:0;width:1920px;height:1080px" }));
   const pill = crawl.pill = R(stage, 56, 1002, 256, 56, C.accent);
   Object.assign(pill.style, { borderRadius: "28px", boxShadow: "inset 0 0 0 1.5px #8CC6FF" });
@@ -797,6 +986,7 @@ function buildTvLayers() {
   crawl.track = el("div", { className: "r" });
   Object.assign(crawl.track.style, { left: "0", top: "0", height: "100px", display: "flex", alignItems: "center", whiteSpace: "nowrap" });
   clip.append(crawl.track); stage.append(clip);
+  tv.bandEls.push(pill, crawl.tag, clip);   // hidden in night mode
 }
 
 function crawlSections() {
@@ -836,7 +1026,7 @@ function startPass() {
   }
   crawl.section = (crawl.section + 1) % keys.length;
   const key = keys[crawl.section];
-  crawl.tag.textContent = key === "following" ? "FOLLOWING" : "TOP STORIES";
+  crawl.tag.textContent = sectionName(key).toUpperCase();
   for (const it of news()[key]) crawlItem(it.title, it.source, C.accent);
   crawl.width = crawl.track.scrollWidth;
   crawl.x = CLIP_W;
@@ -1002,7 +1192,7 @@ async function fetchWeather() {
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day" +
     "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code,uv_index_max" +
     "&hourly=temperature_2m,precipitation_probability,weather_code,is_day" +
-    "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=5";
+    "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=6";
   const j = await fetch(url).then((r) => r.json());
   const c = j.current, d = j.daily, first = (k) => (d[k] || [null])[0];
   const desc = WMO[c.weather_code] ?? "--";
@@ -1017,7 +1207,7 @@ async function fetchWeather() {
   j.hourly.time.forEach((t, i) => { if (t <= c.time) cur = i; });
   const next24 = j.hourly.time.slice(cur, cur + 24).map((t, k) => ({
     hour: +t.slice(11, 13), temp: rnd(j.hourly.temperature_2m[cur + k]), precip: rnd(j.hourly.precipitation_probability[cur + k]) }));
-  const days = [1, 2, 3, 4].filter((i) => d.time[i]).map((i) => ({
+  const days = [1, 2, 3, 4, 5].filter((i) => d.time[i]).map((i) => ({
     name: new Date(d.time[i] + "T12:00:00").toLocaleDateString("en-US", { weekday: "short" }),
     high: rnd(d.temperature_2m_max[i]), low: rnd(d.temperature_2m_min[i]),
     precip: rnd(d.precipitation_probability_max[i]), description: dayDesc(d.weather_code[i]), icon: weatherIcon(d.weather_code[i], true) }));
@@ -1036,7 +1226,8 @@ async function fetchNews() {
     if (also.length) m += "  ·  also " + also.slice(0, 2).join(", ") + (also.length > 2 ? ` +${also.length - 2}` : ""); return m; };
   const out = { sourceName: CONFIG.digestName, stamp: `${j.edition} edition · ${j.updated_time}`, top: [], following: [] };
   for (const b of j.blocks || []) {
-    const key = { top: "top", follow: "following" }[b.kind];
+    const key = b.kind === "top" ? "top" : b.kind === "follow" ? "following" : b.kind === "category" ? sectionKey(b.slug) : "";
+    if (key && b.kind === "category" && b.name) SECTION_NAMES[key] = b.name;   // so the Display list offers it
     if (key) out[key] = (b.stories || []).filter((st) => st.title).slice(0, CONFIG.maxStories).map((st) => ({ title: st.title, source: st.source || "", meta: meta(st) }));
   }
   return out;
@@ -1046,13 +1237,14 @@ async function loadTvData() {
   const [w, n] = await Promise.allSettled([fetchWeather(), fetchNews(), loadAlerts()]);
   tv.data = { weather: w.status === "fulfilled" ? w.value : { error: "Weather unavailable" },
               news: n.status === "fulfilled" ? n.value : { error: "News unavailable" } };
+  renderBanner();   // the digest's categories are known now
   renderTv();
   if (!crawl.width) startPass();   // otherwise new headlines show from the next pass
 }
 window.addEventListener("resize", fitTv);
 
 function showSignin(message = "") {
-  $("app").hidden = true; $("signin").hidden = false; $("save").hidden = true; document.body.classList.remove("signed-in");
+  $("app").hidden = true; $("signin").hidden = false; $("save").hidden = true; $("cancel").hidden = true; document.body.classList.remove("signed-in");
   $("repoName").textContent = CONFIG.repo; $("signinMsg").textContent = message;
   setStatus("");
 }
@@ -1073,13 +1265,11 @@ async function load() {
   let board = {};
   if (res.status === 200) { sha = res.json.sha; board = JSON.parse(fromB64(res.json.content)); }
   else { setStatus("GitHub error " + res.status, "err"); return; }
-  state = cleanBoard(board);
-  dirty = false;
-  $("signin").hidden = true; $("app").hidden = false; $("save").hidden = false; $("save").disabled = true; document.body.classList.add("signed-in");
+  savedBoard = board; state = cleanBoard(board);
+  $("signin").hidden = true; $("app").hidden = false; $("save").hidden = false; $("cancel").hidden = false; setDirty(false); document.body.classList.add("signed-in");
   $("pubRepo").textContent = `github.com/${CONFIG.repo}/${CONFIG.path}`;
   $("pubWhen").textContent = board.updated ? "Last saved " + new Date(board.updated).toLocaleString() : "";
-  $("locName").value = state.location.name; $("locLat").value = state.location.latitude; $("locLon").value = state.location.longitude;
-  fitTv(); renderNotes(); renderBanner(); renderSpotlightSettings(); renderTv();
+  fitTv(); renderAll();
   setStatus(board.updated ? "Up to date" : "");
   loadTvData();
   loadOnThisDay();
@@ -1089,31 +1279,31 @@ async function load() {
 
 async function save() {
   const board = { ...cleanBoard(state), updated: new Date().toISOString() };
-  $("save").disabled = true; setStatus("Saving…");
+  $("save").disabled = true; $("cancel").disabled = true; setStatus("Saving…");
   let res;
   try {
     res = await github("PUT", { message: "Update HomeBoard notes", content: toB64(JSON.stringify(board, null, 2) + "\n"), ...(sha ? { sha } : {}) });
-  } catch (e) { $("save").disabled = false; setStatus("Save failed: " + e.message, "err"); return; }
+  } catch (e) { setDirty(true); setStatus("Save failed: " + e.message, "err"); return; }
   if (res.status === 200 || res.status === 201) {
-    sha = res.json.content.sha; state = cleanBoard(board); dirty = false;
+    sha = res.json.content.sha; savedBoard = board; state = cleanBoard(board); setDirty(false);
     $("pubWhen").textContent = "Last saved " + new Date(board.updated).toLocaleString();
-    renderNotes(); renderBanner(); renderSpotlightSettings(); renderTv();
-    setStatus("Saved. The TV picks it up within about 2 minutes.", "ok");
+    renderAll();
+    setStatus("Saved. The TV picks it up within about 30 seconds.", "ok");
     setTimeout(() => { if (!dirty) setStatus("Up to date"); }, 4000);
   } else if (res.status === 409 || res.status === 422) {
-    $("save").disabled = false;
+    setDirty(true);
     setStatus("Changed on another device since you opened it.", "err");
     if (confirm("The notes were changed on another device. Load the latest version? (Your unsaved edits here will be lost.)")) load();
   } else if (res.status === 401 || res.status === 403 || res.status === 404) {
-    $("save").disabled = false;
+    setDirty(true);
     const why = res.json && res.json.message ? ` GitHub says: "${res.json.message}".` : "";
     setStatus(`Save refused (${res.status}).${why} This token can read but not write: give it Contents: Read and write on ${CONFIG.repo} (or sign out and use a panel token, not the TV's read-only one).`, "err");
-  } else { $("save").disabled = false; setStatus("Save failed: GitHub error " + res.status, "err"); }
+  } else { setDirty(true); setStatus("Save failed: GitHub error " + res.status, "err"); }
 }
 
 $("save").onclick = save;
-$("addNote").onclick = () => addNote(false);
-$("addEvent").onclick = () => addNote(true);
+$("cancel").onclick = cancelChanges;
+$("addEvent").onclick = addEvent;
 $("clearPast").onclick = () => { const before = state.notes.length; state.notes = state.notes.filter((n) => !isPast(n)); if (state.notes.length !== before) { renderNotes(); markDirty(); } };
 $("speed").addEventListener("change", () => { state.settings.ticker.speed = $("speed").value; markDirty(); });
 $("tickers").addEventListener("input", () => {
@@ -1124,6 +1314,14 @@ $("tickers").addEventListener("change", () => loadMarkets());
 $("spotSecs").addEventListener("change", () => { state.settings.spotlight.seconds = +$("spotSecs").value; markDirty(); restartSpot(); });
 $("sky").addEventListener("change", () => { state.settings.sky = $("sky").value; markDirty(); renderSky(); });
 $("tvRefresh").onclick = () => loadTvData();
+$("msgText").addEventListener("input", editMessage);
+$("msgText").addEventListener("blur", () => renderMessage());
+$("msgFor").addEventListener("change", () => { if (state.message) editMessage(); });
+$("msgClear").onclick = () => { $("msgText").value = ""; editMessage(); };
+$("nightOn").addEventListener("change", () => { state.settings.night.enabled = $("nightOn").checked; markDirty(); });
+for (const [id, key] of [["nightStart", "start"], ["nightEnd", "end"]])
+  $(id).addEventListener("change", () => { if (clockMin($(id).value) >= 0) { state.settings.night[key] = $(id).value; markDirty(); } else renderNightSettings(); });
+$("nightPreview").addEventListener("change", () => { tv.previewNight = $("nightPreview").checked; renderTv(); });
 for (const [id, key] of [["locName", "name"], ["locLat", "latitude"], ["locLon", "longitude"]]) {
   $(id).addEventListener("input", () => { state.location[key] = $(id).value; markDirty(); });
   if (key !== "name") $(id).addEventListener("change", loadTvData);
@@ -1135,7 +1333,7 @@ $("signinBtn").onclick = async () => {
   await load();
 };
 $("tokenInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("signinBtn").click(); });
-$("signout").onclick = () => { if (dirty && !confirm("Discard unsaved changes and sign out?")) return; store.del(TOKEN_KEY); dirty = false; showSignin("Signed out. The token was removed from this browser."); };
+$("signout").onclick = () => { if (dirty && !confirm("Discard unsaved changes and sign out?")) return; store.del(TOKEN_KEY); setDirty(false); showSignin("Signed out. The token was removed from this browser."); };
 document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); if (dirty) save(); } });
 window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 buildTvLayers();
@@ -1148,17 +1346,13 @@ function restartSpot() {
                           (state.settings.spotlight.seconds || 45) * 1000);
 }
 restartSpot();
-setInterval(() => { if (new Date().getSeconds() === 0) renderTv(); }, 1000);
+setInterval(() => { if (new Date().getSeconds() === 0) { renderTv(); if (!$("app").hidden) renderMessage(); } }, 1000);
+setInterval(() => { const v = notesRows(); if (v.pages > 1 && v.page !== lastNotesPage && !nightActive()) renderTv(); }, 1000);
 setInterval(() => { if (!$("app").hidden) loadAlerts(); }, 5 * 60 * 1000);
 load();
 
-// ---------- Installable app ----------
+// ---------- Installable app: the browser's own Install / Add to Home Screen ----------
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
-// Chrome/Edge/Android offer an install prompt; iOS uses Share > Add to Home Screen instead.
-let installPrompt = null;
-window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; $("install").hidden = false; });
-$("install").onclick = async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; $("install").hidden = true; };
-window.addEventListener("appinstalled", () => { $("install").hidden = true; });
 </script>
 </body>
 </html>
