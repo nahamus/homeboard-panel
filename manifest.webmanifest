@@ -1,7 +1,7 @@
 {
   "name": "HomeBoard Control",
   "short_name": "HomeBoard",
-  "description": "Notes, countdowns and display settings for the HomeBoard TV screensaver, with a live TV preview.",
+  "description": "Flash message, events and display settings for the HomeBoard TV screensaver, with a live TV preview.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
