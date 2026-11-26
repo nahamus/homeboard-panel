@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; manifest-src 'self'; worker-src 'self'; connect-src https://api.github.com https://api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://nahamus.github.io https://api.wikimedia.org; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; manifest-src 'self'; worker-src 'self'; connect-src https://api.github.com https://api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://news.nahamus.com https://api.wikimedia.org; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="robots" content="noindex">
 <title>HomeBoard Control</title>
 <!-- Installable app (PWA): Add to Home Screen on iOS/Android, Install on desktop Chrome/Edge -->
@@ -316,7 +316,7 @@
 if (window.top !== window.self) { document.body.replaceChildren(); throw new Error("HomeBoard Control can't run in a frame"); }
 const CONFIG = {
   repo: "nahamus/homeboard-data", path: "board.json",
-  digestUrl: "https://nahamus.github.io/news-digest/latest.json", digestName: "News Digest", maxStories: 8,
+  digestUrl: "https://news.nahamus.com/latest.json", digestName: "News Digest", maxStories: 8,
 };
 const TOKEN_KEY = "homeboard.token";
 // News sections: Top Stories, Following, then every category in the digest (filled in when it loads)
