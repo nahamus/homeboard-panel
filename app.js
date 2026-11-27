@@ -255,10 +255,27 @@ function renderBanner() {
 }
 
 // ---------- TV preview: mirrors the SceneGraph layout (components/*.xml/.brs) ----------
-const C = { text: "#F5F7FA", white: "#FFFFFF", secondary: "#C3CCD5", muted: "#7F8C99", accent: "#6CB4FF", heading: "#8CC6FF",
+const C = { text: "#F5F7FA", white: "#FFFFFF", secondary: "#C3CCD5", muted: "#7F8C99", accent: "#6CB4FF", heading: "#A9B6C8", dot: "#8CC6FF",
             warm: "#FFC857", hair: "rgba(255,255,255,.15)", band: "rgba(5,8,13,.7)", ink: "#0B0F14" };
 // Same art the TV uses (tools/make-assets.py). Local preview serves the repo root; Pages serves a copy.
 const ASSETS = location.pathname.includes("/control/") ? "../images/ui/" : "images/ui/";
+// Fonts the TV can be switched to (fonts/, see tools/set-font.py). The preview's Font picker loads them on demand.
+const FONTS = location.pathname.includes("/control/") ? "../fonts/" : "fonts/";
+const FONT_FAMILIES = { inter: "Inter", manrope: "Manrope", outfit: "Outfit" };
+// The font the TV currently uses: tools/set-font.py rewrites this line ("" = Roku's own font)
+const TV_FONT = "outfit";
+async function previewFont(key) {
+  const tvEl = $("tv");
+  if (!FONT_FAMILIES[key]) { tvEl.style.fontFamily = ""; renderTv(); return; }
+  const family = "HB " + FONT_FAMILIES[key];
+  if (![...document.fonts].some((f) => f.family === family)) {
+    const faces = [["regular", "400"], ["bold", "700"]].map(([style, weight]) => new FontFace(family, `url(${FONTS}${key}-${style}.ttf)`, { weight }));
+    try { await Promise.all(faces.map((f) => f.load())); faces.forEach((f) => document.fonts.add(f)); }
+    catch { setStatus("Couldn't load that font", "err"); return; }
+  }
+  tvEl.style.fontFamily = `"${family}", "Segoe UI", system-ui, sans-serif`;
+  renderTv(); startPass();   // re-measure the clock, labels and the crawl in the new font
+}
 const DEG = "\u00b0", DOT = "  \u00b7  ";
 let tv = { data: null, markets: null, otd: null, spotIdx: 0, otdOffset: 0 };
 
@@ -356,7 +373,7 @@ function drawNotes(root, { rows, total, page, pages }, cardH) {
     const dotsW = 30 + (pages - 1) * 22;
     L(p, `${total} events`, W - dotsW - 18 - 400, 0, 400, 40, 26, false, C.muted, "right");
     for (let i = 0, x = W - dotsW; i < pages; i++) {
-      const dw = i === page ? 30 : 12, dot = R(p, x, 14, dw, 12, i === page ? C.heading : "rgba(255,255,255,.25)");
+      const dw = i === page ? 30 : 12, dot = R(p, x, 14, dw, 12, i === page ? C.dot : "rgba(255,255,255,.25)");
       dot.style.borderRadius = "6px"; x += dw + 10;
     }
   }
@@ -487,7 +504,7 @@ function drawMarkets(p, W, H) {
     if (n) R(p, 0, y, W, 1, "rgba(255,255,255,.08)");
     const up = typeof it.changePct === "number" && it.changePct >= 0, live = typeof it.changePct === "number";
     const tone = !live ? C.muted : up ? "#4ADE80" : "#FF7B7B";
-    L(p, it.name, 0, y, 300, rowH, 38, true, C.text);
+    L(p, it.name, 0, y, 300, rowH, 38, false, C.text);
     L(p, money(it.price), 300, y, 270, rowH, 38, false, C.text, "right");
     R(p, 600, y + 16, 150, 46, !live ? "rgba(255,255,255,.06)" : up ? "rgba(46,204,113,.18)" : "rgba(255,107,107,.18)");
     L(p, live ? `${up ? "+" : "-"}${Math.abs(it.changePct).toFixed(2)}%` : "--", 600, y + 16, 150, 46, 30, true, tone, "center");
@@ -585,7 +602,7 @@ function drawWeather(root) {
   days.slice(evening ? 1 : 0, evening ? 5 : 4).forEach((d, i) => {
     const y = 554 + i * 50;
     Icon(p, d.icon, 36, y + 4, 42);
-    L(p, d.name, 94, y, 80, 50, 30, true, C.text);
+    L(p, d.name, 94, y, 80, 50, 30, false, C.text);
     L(p, num(d.high) + DEG + " / " + num(d.low) + DEG, 174, y, 154, 50, 30, false, C.text);
     L(p, d.description + (d.precip >= 20 ? DOT + d.precip + "%" : ""), 328, y, 236, 50, 24, false, C.muted);
   });
@@ -723,11 +740,16 @@ function buildTvLayers() {
   const skyLayer = el("div", { id: "tvSky", className: "r" });
   Object.assign(skyLayer.style, { left: 0, top: 0, width: "1920px", height: "1080px", overflow: "hidden" });
   stage.append(skyLayer);
-  tv.bandEls = [R(stage, 0, 980, 1920, 100, C.band), R(stage, 0, 980, 1920, 1, "rgba(255,255,255,.2)")];
+  // vignette over the sky, then the news band fading up from the bottom (mirrors HomeBoardScene.xml)
+  const vig = R(stage, 0, 0, 1920, 1080, "transparent");
+  vig.style.background = "radial-gradient(62% 66% at 50% 50%, rgba(2,4,10,0) 55%, rgba(2,4,10,.62) 120%)";
+  const band = R(stage, 0, 940, 1920, 140, "transparent");
+  band.style.background = "linear-gradient(rgba(4,7,12,0) 0, rgba(4,7,12,.86) 45px, rgba(4,7,12,.9) 140px)";
+  tv.bandEls = [band];
   stage.append(Object.assign(el("div", { id: "tvStatic", className: "r" }), { style: "left:0;top:0;width:1920px;height:1080px" }));
-  const pill = crawl.pill = R(stage, 56, 1002, 256, 56, C.accent);
-  Object.assign(pill.style, { borderRadius: "28px", boxShadow: "inset 0 0 0 1.5px #8CC6FF" });
-  crawl.tag = L(stage, "NEWS", 56, 1002, 256, 56, 26, true, C.ink, "center");
+  const pill = crawl.pill = R(stage, 56, 1002, 256, 56, "rgba(255,255,255,.13)");
+  Object.assign(pill.style, { borderRadius: "28px", boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,.27)" });
+  crawl.tag = L(stage, "NEWS", 56, 1002, 256, 56, 26, true, C.white, "center");
   const clip = el("div", { className: "r" });
   Object.assign(clip.style, { left: "336px", top: "980px", width: CLIP_W + "px", height: "100px", overflow: "hidden",
     maskImage: "linear-gradient(90deg, transparent 0, #000 72px, #000 calc(100% - 72px), transparent 100%)",
@@ -751,8 +773,8 @@ function crawlItem(title, meta, metaColor) {
   crawl.track.append(dot);
 }
 function setTag(text, warn) {
-  crawl.tag.textContent = text; crawl.tag.style.color = warn ? C.white : C.ink;
-  Object.assign(crawl.pill.style, { background: warn ? "#FF5A4E" : C.accent, boxShadow: warn ? "none" : "inset 0 0 0 1.5px #8CC6FF" });
+  crawl.tag.textContent = text; crawl.tag.style.color = C.white;
+  Object.assign(crawl.pill.style, { background: warn ? "#FF5A4E" : "rgba(255,255,255,.13)", boxShadow: warn ? "none" : "inset 0 0 0 1.5px rgba(255,255,255,.27)" });
 }
 
 function startPass() {
@@ -1087,6 +1109,7 @@ $("msgClear").onclick = () => { $("msgText").value = ""; editMessage(); };
 $("nightOn").addEventListener("change", () => { state.settings.night.enabled = $("nightOn").checked; renderNightSettings(); markDirty(); });
 for (const [id, key] of [["nightStart", "start"], ["nightEnd", "end"]])
   $(id).addEventListener("change", () => { if (clockMin($(id).value) >= 0) { state.settings.night[key] = $(id).value; markDirty(); } else renderNightSettings(); });
+$("previewFont").addEventListener("change", () => previewFont($("previewFont").value));   // preview only
 for (const [id, key] of [["previewRain", "previewRain"], ["previewHourly", "previewHourly"]])   // preview-only toggles
   $(id).onclick = () => { tv[key] = !tv[key]; $(id).setAttribute("aria-pressed", String(tv[key])); renderTv(); };
 $("nightPreview").onclick = () => { tv.previewNight = !tv.previewNight; $("nightPreview").setAttribute("aria-pressed", String(tv.previewNight)); renderTv(); };
@@ -1117,6 +1140,10 @@ restartSpot();
 setInterval(() => { if (new Date().getSeconds() === 0) { renderTv(); if (!$("app").hidden) renderMessage(); } }, 1000);
 setInterval(() => { const v = notesRows(); if (v.pages > 1 && v.page !== lastNotesPage && !nightActive()) renderTv(); }, 1000);
 setInterval(() => { if (!$("app").hidden) loadAlerts(); }, 5 * 60 * 1000);
+// Preview in the TV's own font from the start; the picker shows which one that is
+$("previewFont").value = TV_FONT;
+for (const o of $("previewFont").options) if (o.value === TV_FONT) o.textContent += " (TV)";
+previewFont(TV_FONT);
 load();
 
 // ---------- Installable app: the browser's own Install / Add to Home Screen ----------

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; manifest-src 'self'; worker-src 'self'; connect-src https://api.github.com https://api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://news.nahamus.com https://api.wikimedia.org; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; manifest-src 'self'; worker-src 'self'; connect-src https://api.github.com https://api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://news.nahamus.com https://api.wikimedia.org; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="robots" content="noindex">
 <title>HomeBoard Control</title>
 <!-- Installable app (PWA): Add to Home Screen on iOS/Android, Install on desktop Chrome/Edge -->
@@ -101,6 +101,16 @@
   button.toggle { font-size: 13px; padding: 4px 12px; border-radius: 999px; }
   button.toggle[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .tv-section .card-head button.icon { font-size: 16px; width: 32px; height: 30px; padding: 0; border-radius: 999px; }
+  .tv-section .card-head { flex-wrap: wrap; }
+  .tv-tools { display: flex; align-items: center; gap: 8px; }
+  @media (max-width: 700px) {
+    /* phones: the controls get their own single row under the title, scrolling sideways if needed */
+    .tv-tools { order: 3; flex: 1 0 100%; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+    .tv-tools::-webkit-scrollbar { display: none; }
+    .tv-tools > * { flex: none; }
+    .tv-tools button.toggle, .tv-tools select { min-height: 36px; }
+  }
+  select.font-pick { font-size: 13px; padding: 3px 8px; border-radius: 999px; }
   /* Display: groups in a grid, chips for lists */
   .groups { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 40px; }
   @media (max-width: 700px) { .groups { grid-template-columns: 1fr; } }
@@ -148,7 +158,7 @@
         background: #0B0F14; color: #F5F7FA; font-family: "Segoe UI", system-ui, sans-serif; }
   .tv .l { position: absolute; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tv .r { position: absolute; }
-  .tv .glass { position: absolute; border-radius: 28px; background: rgba(10,16,28,.59);
+  .tv .glass { position: absolute; border-radius: 28px; background: rgba(9,14,26,.67);
                border: 1.5px solid rgba(255,255,255,.16); border-top-color: rgba(255,255,255,.3);
                box-shadow: 0 6px 24px rgba(0,0,0,.43); box-sizing: border-box; }
   .tv .chip { position: absolute; border-radius: 16px; background: rgba(255,255,255,.1);
@@ -243,13 +253,19 @@
     <div class="card-head">
       <h2>Preview</h2>
       <span id="tvDirty" class="status dirty" hidden>Unsaved changes shown</span>
-      <!-- Preview-only toggles (not saved, never sent to the TV): fake rain, pin Spotlight on the hourly chart, night mode -->
+      <!-- Preview-only controls (not saved, never sent to the TV): try a font, fake rain, pin the hourly chart, night mode.
+           The font picker starts on the TV's own font (TV_FONT in app.js, set by tools/set-font.py). -->
+      <div class="tv-tools">
+      <select id="previewFont" class="font-pick" aria-label="Preview font" title="Preview only: try another font on the TV preview">
+        <option value="">Roku font</option><option value="inter">Inter</option><option value="manrope">Manrope</option><option value="outfit">Outfit</option>
+      </select>
       <button id="previewRain" class="toggle" aria-pressed="false" title="Preview only: pretend rain is on the way">Rain</button>
       <button id="previewHourly" class="toggle" aria-pressed="false" title="Preview only: keep Spotlight on the Next 12 hours chart">12 h</button>
       <button id="nightPreview" class="toggle" aria-pressed="false" title="Show night mode in the preview (not saved)">Night</button>
       <button id="tvRefresh" class="icon" title="Refresh weather and news" aria-label="Refresh weather and news">↻</button>
+      </div>
     </div>
-    <div class="tv-frame" title="A 1920×1080 replica of the TV with your unsaved changes. The TV uses Roku's font, so text widths can differ slightly.">
+    <div class="tv-frame" title="A 1920×1080 replica of the TV with your unsaved changes. The TV draws text a little differently, so widths can differ slightly.">
       <div class="tv-viewport" id="tvViewport"><div class="tv" id="tv"></div></div></div>
   </section>
 
