@@ -153,7 +153,7 @@ function renderNightSettings() {
 
 function setStatus(text, cls = "") { const s = $("status"); s.textContent = text; s.className = "status " + cls; }
 function setDirty(on) {
-  dirty = on; $("save").disabled = !on; $("cancel").disabled = !on; $("tvDirty").hidden = !on;
+  dirty = on; $("save").disabled = !on; $("cancel").disabled = !on; $("cancel").hidden = !on; $("tvDirty").hidden = !on;
 }
 function markDirty() { setDirty(true); setStatus("Unsaved changes", "dirty"); renderTv(); }
 function renderAll() {
@@ -168,37 +168,49 @@ function cancelChanges() {
   setStatus("Changes undone", "ok"); setTimeout(() => { if (!dirty) setStatus("Up to date"); }, 3000);
 }
 
+// Past events sit in a collapsed group under the upcoming ones (panel only, not saved).
+let showPastEvents = false;
 function renderNotes() {
   const box = $("notes"); box.replaceChildren();
   if (!state.notes.length) { box.append(el("div", { className: "empty", textContent: "No events yet." })); }
-  state.notes.forEach((n, i) => {
-    const row = el("div", { className: rowClass(n) });
-    const next = el("div", { className: "next" });
-    const showNext = () => { const k = n.repeat && n.date ? eventDate(n) : ""; next.textContent = k && k !== n.date ? `Next: ${prettyDate(k)}` : ""; next.hidden = !next.textContent; };
-    const bind = (input, key) => { input.addEventListener("input", () => {
-      n[key] = input.type === "checkbox" ? input.checked : input.value;
-      row.className = rowClass(n); showNext(); updatePast(); markDirty(); }); return input; };
-    const show = bind(el("input", { type: "checkbox", checked: n.show, title: "Show on TV" }), "show");
-    const title = bind(el("input", { type: "text", value: n.title, placeholder: "Title", className: "title" }), "title");
-    const date = bind(el("input", { type: "date", value: n.date, required: true, className: "date" }), "date");
-    date.addEventListener("change", () => { if (!date.value) { date.value = n.date = n.date || todayKey(); } });
-    const time = bind(el("input", { type: "time", value: n.time, className: "time" }), "time");
-    const repeat = bind(el("select", { className: "repeat", title: "Repeat" }, ...Object.entries(REPEATS).map(([v, label]) => el("option", { value: v, textContent: label }))), "repeat");
-    repeat.value = n.repeat || "";
-    const details = bind(el("input", { type: "text", value: n.details, placeholder: "Details (optional)", className: "details" }), "details");
-    const del = el("button", { className: "icon del", textContent: "✕", title: "Delete", onclick: () => { state.notes.splice(i, 1); renderNotes(); markDirty(); } });
-    row.append(el("label", { className: "show", title: "Show on TV" }, show), title, date, time, repeat, details, el("div", { className: "row-actions" }, del), next);
-    showNext();
-    box.append(row);
-  });
-  updatePast();
+  const rows = state.notes.map((n, i) => ({ n, i }));
+  const upcoming = rows.filter((r) => !isPast(r.n)), past = rows.filter((r) => isPast(r.n));
+  if (state.notes.length && !upcoming.length) box.append(el("div", { className: "empty", textContent: "No upcoming events." }));
+  for (const r of upcoming) box.append(noteRow(r.n, r.i));
+  if (past.length) {
+    const toggle = el("button", { className: "past-toggle", onclick: () => { showPastEvents = !showPastEvents; renderNotes(); },
+      textContent: `${showPastEvents ? "▾" : "▸"} ${past.length} past event${past.length === 1 ? "" : "s"}` });
+    toggle.setAttribute("aria-expanded", String(showPastEvents));
+    box.append(toggle);
+    if (showPastEvents) {
+      for (const r of past) box.append(noteRow(r.n, r.i));
+      box.append(el("div", { className: "past-actions" }, el("button", { className: "link", textContent: `Remove ${past.length === 1 ? "it" : `all ${past.length}`}`,
+        onclick: () => { state.notes = state.notes.filter((n) => !isPast(n)); showPastEvents = false; renderNotes(); markDirty(); } })));
+    }
+  }
 }
 
-// "Remove 2 past" only when there are any
-function updatePast() {
-  const past = state.notes.filter(isPast).length, b = $("clearPast");
-  b.hidden = !past; b.textContent = `Remove ${past} past`;
+function noteRow(n, i) {
+  const row = el("div", { className: rowClass(n) });
+  const next = el("div", { className: "next" });
+  const showNext = () => { const k = n.repeat && n.date ? eventDate(n) : ""; next.textContent = k && k !== n.date ? `Next: ${prettyDate(k)}` : ""; next.hidden = !next.textContent; };
+  const bind = (input, key) => { input.addEventListener("input", () => {
+    n[key] = input.type === "checkbox" ? input.checked : input.value;
+    row.className = rowClass(n); showNext(); markDirty(); }); return input; };
+  const show = bind(el("input", { type: "checkbox", checked: n.show, title: "Show on TV" }), "show");
+  const title = bind(el("input", { type: "text", value: n.title, placeholder: "Title", className: "title" }), "title");
+  const date = bind(el("input", { type: "date", value: n.date, required: true, className: "date" }), "date");
+  date.addEventListener("change", () => { if (!date.value) { date.value = n.date = n.date || todayKey(); } });
+  const time = bind(el("input", { type: "time", value: n.time, className: "time" }), "time");
+  const repeat = bind(el("select", { className: "repeat", title: "Repeat" }, ...Object.entries(REPEATS).map(([v, label]) => el("option", { value: v, textContent: label }))), "repeat");
+  repeat.value = n.repeat || "";
+  const details = bind(el("input", { type: "text", value: n.details, placeholder: "Details (optional)", className: "details" }), "details");
+  const del = el("button", { className: "icon del", textContent: "✕", title: "Delete", onclick: () => { state.notes.splice(i, 1); renderNotes(); markDirty(); } });
+  row.append(el("label", { className: "show", title: "Show on TV" }, show), title, date, time, repeat, details, el("div", { className: "row-actions" }, del), next);
+  showNext();
+  return row;
 }
+
 const sortEvents = () => state.notes.sort((a, b) => (eventDate(a) + " " + (a.time || "")).localeCompare(eventDate(b) + " " + (b.time || "")));
 
 function addEvent() {
@@ -962,8 +974,6 @@ async function fetchWeather() {
   // Now + 12 hours for the Spotlight hourly chart (mirrors nextTwelve() in FetchTask.brs)
   const next12 = j.hourly.time.slice(cur, cur + 13).map((t, k) => ({
     label: hourLabel(t), temp: rnd(j.hourly.temperature_2m[cur + k]), precip: rnd(j.hourly.precipitation_probability[cur + k]) }));
-  const next24 = j.hourly.time.slice(cur, cur + 24).map((t, k) => ({
-    hour: +t.slice(11, 13), temp: rnd(j.hourly.temperature_2m[cur + k]), precip: rnd(j.hourly.precipitation_probability[cur + k]) }));
   const days = [1, 2, 3, 4, 5].filter((i) => d.time[i]).map((i) => ({
     name: new Date(d.time[i] + "T12:00:00").toLocaleDateString("en-US", { weekday: "short" }),
     high: rnd(d.temperature_2m_max[i]), low: rnd(d.temperature_2m_min[i]),
@@ -973,7 +983,7 @@ async function fetchWeather() {
     windDir: c.wind_direction_10m == null ? null : ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.floor((c.wind_direction_10m + 22.5) / 45) % 8],
     description: Array.isArray(desc) ? desc[c.is_day === 1 ? 0 : 1] : desc,
     high: rnd(first("temperature_2m_max")), low: rnd(first("temperature_2m_min")),
-    precipChance: rnd(first("precipitation_probability_max")), uvMax: rnd(first("uv_index_max")), aqi: await fetchAqi().catch(() => null), sunrise: first("sunrise"), sunset: first("sunset"), hours, days, next24, next12,
+    uvMax: rnd(first("uv_index_max")), aqi: await fetchAqi().catch(() => null), sunrise: first("sunrise"), sunset: first("sunset"), hours, days, next12,
     rainNote: rainNote(j.minutely_15, c.time, c.temperature_2m),
     icon: weatherIcon(c.weather_code, c.is_day === 1), isDay: c.is_day === 1, code: c.weather_code };
 }
@@ -1062,7 +1072,6 @@ async function save() {
 $("save").onclick = save;
 $("cancel").onclick = cancelChanges;
 $("addEvent").onclick = addEvent;
-$("clearPast").onclick = () => { state.notes = state.notes.filter((n) => !isPast(n)); renderNotes(); markDirty(); };
 $("speed").addEventListener("change", () => { state.settings.ticker.speed = $("speed").value; markDirty(); });
 $("tickers").addEventListener("input", () => {
   state.settings.spotlight.tickers = $("tickers").value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean).slice(0, 6);
